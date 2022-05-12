@@ -287,8 +287,10 @@ calculateNodeOp(const KeyType* tree, TreeNodeIndex nodeIdx, const unsigned* coun
     if (siblingIdx > 0) // 8 siblings next to each other, node can potentially be merged
     {
         // pointer to first node in sibling group
-        auto g          = counts + nodeIdx - siblingIdx;
-        bool countMerge = (g[0] + g[1] + g[2] + g[3] + g[4] + g[5] + g[6] + g[7]) <= bucketSize;
+        auto g             = counts + nodeIdx - siblingIdx;
+        size_t parentCount = size_t(g[0]) + size_t(g[1]) + size_t(g[2]) + size_t(g[3]) + size_t(g[4]) + size_t(g[5]) +
+                             size_t(g[6]) + size_t(g[7]);
+        bool countMerge = parentCount <= size_t(bucketSize);
         if (countMerge) { return 0; } // merge
     }
 
@@ -387,7 +389,6 @@ processNode(TreeNodeIndex nodeIndex, const KeyType* oldTree, const TreeNodeIndex
 template<class InputVector, class OutputVector>
 void rebalanceTree(const InputVector& tree, OutputVector& newTree, TreeNodeIndex* nodeOps)
 {
-    using KeyType          = typename InputVector::value_type;
     TreeNodeIndex numNodes = nNodes(tree);
 
     exclusiveScan(nodeOps, numNodes + 1);
@@ -398,7 +399,7 @@ void rebalanceTree(const InputVector& tree, OutputVector& newTree, TreeNodeIndex
     {
         processNode(i, tree.data(), nodeOps, newTree.data());
     }
-    *newTree.rbegin() = nodeRange<KeyType>(0);
+    newTree.back() = tree.back();
 }
 
 /*! @brief update the octree with a single rebalance/count step
@@ -455,6 +456,29 @@ computeOctree(const KeyType* codesStart,
         ;
 
     return std::make_tuple(std::move(tree), std::move(counts));
+}
+
+/*! @brief update a treelet (sub-octree not spanning full SFC) based on node counts
+ *
+ * @tparam     KeyType       32- or 64-bit unsigned integer for SFC code
+ * @param[in]  treelet       cornerstone key sequence, covering only part of the SFC
+ * @param[in]  counts        particle counts per cell in @p treelet, length = treelet.size() - 1
+ * @param[in]  bucketSize    rebalance criterion
+ * @return                   rebalanced treelet with nodes split where count > @p bucketSize
+ *
+ * Currently used for rebalancing an SFC range before hand-over to another rank after assignment shift.
+ */
+template<class KeyType>
+std::vector<KeyType>
+updateTreelet(gsl::span<const KeyType> treelet, gsl::span<const unsigned> counts, unsigned bucketSize)
+{
+    std::vector<TreeNodeIndex> nodeOps(nNodes(treelet) + 1);
+    rebalanceDecision(treelet.data(), counts.data(), nNodes(treelet), bucketSize, nodeOps.data());
+
+    std::vector<KeyType> newTreelet;
+    rebalanceTree(treelet, newTreelet, nodeOps.data());
+
+    return newTreelet;
 }
 
 /*! @brief create a cornerstone octree around a series of given SFC codes
