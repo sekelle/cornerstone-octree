@@ -24,54 +24,23 @@
  */
 
 /*! @file
- * @brief Traits classes for Domain to manage GPU device acceleration behavior
+ * @brief CPU/GPU reorder functor
  *
  * @author Sebastian Keller <sebastian.f.keller@gmail.com>
  */
 
 #pragma once
 
-#include <type_traits>
-
+#include "cstone/tree/accel_switch.hpp"
 #include "cstone/primitives/gather.hpp"
 #include "cstone/cuda/gather.cuh"
 
 namespace cstone
 {
 
-struct CpuTag
-{
-};
-struct GpuTag
-{
-};
-
-namespace detail
-{
-
-template<class Accelerator, class = void>
-struct ReorderFunctor
-{
-};
-
-template<class Accelerator>
-struct ReorderFunctor<Accelerator, std::enable_if_t<std::is_same<Accelerator, CpuTag>{}>>
-{
-    template<class KeyType, class IndexType>
-    using type = CpuGather<KeyType, IndexType>;
-};
-
-template<class Accelerator>
-struct ReorderFunctor<Accelerator, std::enable_if_t<std::is_same<Accelerator, GpuTag>{}>>
-{
-    template<class KeyType, class IndexType>
-    using type = DeviceGather<KeyType, IndexType>;
-};
-
-} // namespace detail
-
 //! @brief returns reorder functor type to be used, depending on the accelerator
 template<class Accelerator, class KeyType, class IndexType>
-using ReorderFunctor_t = typename detail::ReorderFunctor<Accelerator>::template type<KeyType, IndexType>;
+using ReorderFunctor_t =
+    typename AccelSwitchType<Accelerator, CpuGather, DeviceGather>::template type<KeyType, IndexType>;
 
 } // namespace cstone
