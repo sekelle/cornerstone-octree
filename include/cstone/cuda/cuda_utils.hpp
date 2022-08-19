@@ -1,7 +1,8 @@
 /*
  * MIT License
  *
- * Copyright (c) 2022 CSCS, ETH Zurich
+ * Copyright (c) 2021 CSCS, ETH Zurich
+ *               2021 University of Basel
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -24,19 +25,8 @@
 
 #pragma once
 
-#include <cstdio>
-#include <cuda_runtime.h>
-
-inline void checkErr(cudaError_t err, const char* filename, int lineno, const char* funcName)
-{
-    if (err != cudaSuccess)
-    {
-        const char* errName = cudaGetErrorName(err);
-        const char* errStr  = cudaGetErrorString(err);
-        fprintf(stderr, "CUDA Error at %s:%d. Function %s returned err %d: %s - %s\n", filename, lineno, funcName, err,
-                errName, errStr);
-        exit(EXIT_FAILURE);
-    }
-}
-
-#define checkGpuErrors(errcode) checkErr((errcode), __FILE__, __LINE__, #errcode);
+#ifdef USE_CUDA
+#include "cuda_utils.cuh"
+#else
+#include "cuda_stubs.h"
+#endif

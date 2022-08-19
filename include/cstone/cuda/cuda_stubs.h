@@ -1,7 +1,8 @@
 /*
  * MIT License
  *
- * Copyright (c) 2022 CSCS, ETH Zurich
+ * Copyright (c) 2022 Politechnical University of Catalonia UPC
+ *               2022 University of Basel
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,21 +23,23 @@
  * SOFTWARE.
  */
 
+/*! @file
+ * @brief  CUDA/Thrust stubs to provide declarations without definitions for use in non-CUDA builds
+ * @author Sebastian Keller <sebastian.f.keller@gmail.com>
+ */
+
 #pragma once
 
-#include <cstdio>
-#include <cuda_runtime.h>
+template<class ThrustVec>
+typename ThrustVec::value_type* rawPtr(ThrustVec& p);
 
-inline void checkErr(cudaError_t err, const char* filename, int lineno, const char* funcName)
+template<class ThrustVec>
+const typename ThrustVec::value_type* rawPtr(const ThrustVec& p);
+
+namespace thrust
 {
-    if (err != cudaSuccess)
-    {
-        const char* errName = cudaGetErrorName(err);
-        const char* errStr  = cudaGetErrorString(err);
-        fprintf(stderr, "CUDA Error at %s:%d. Function %s returned err %d: %s - %s\n", filename, lineno, funcName, err,
-                errName, errStr);
-        exit(EXIT_FAILURE);
-    }
-}
 
-#define checkGpuErrors(errcode) checkErr((errcode), __FILE__, __LINE__, #errcode);
+template<class T, class Alloc>
+class device_vector;
+
+} // namespace thrust
