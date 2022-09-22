@@ -3,7 +3,7 @@
 # Cornerstone octree - a distributed domain and octree for N-body simulations
 
 Cornerstone octree is a collection of header only routines for
-* **3D Morton codes:** encoding/decoding in 32 and 64 bits
+* **3D Hilbert Morton codes:** encoding/decoding in 32 and 64 bits
 * **Octrees:** local and distributed octree builds from x,y,z coordinates, using
   a lean format that stores only the leaf nodes with one Morton code per leaf
   in a contiguous array.
