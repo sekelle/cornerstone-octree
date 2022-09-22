@@ -3,13 +3,13 @@
 # Cornerstone octree - a distributed domain and octree for N-body simulations
 
 Cornerstone octree is a collection of header only routines for
-* **3D Hilbert Morton codes:** encoding/decoding in 32 and 64 bits
+* **3D Hilbert and Morton codes:** encoding/decoding in 32 and 64 bits
 * **Octrees:** local and distributed octree builds from x,y,z coordinates, using
   a lean format that stores only the leaf nodes with one Morton code per leaf
   in a contiguous array.
 * **Halo discovery:** identify halo nodes in a global octree, using a 3D collision detection
   algorithm that builds and traverses a binary radix tree.
-* **Neighbor searching:** Find particle neighbors within a radius using sorted particle Morton codes
+* **Neighbor searching:** Find particle neighbors within a radius using sorted particle Hilbert or Morton codes
 * **Particle exchange:** exchange elements of local coordinate arrays to whip them into shape
    as defined by a global octree, including halo particles.
 
@@ -17,9 +17,10 @@ All of these components are combined into a **global domain** to manage distribu
 unified under a global octree. But of course, each component can also be used on its own to
 build domains with different behaviors.
 
-Cornerstone octree is a C++17 headers-only library with no external software dependencies,
+The CPU version of Cornerstone octree is a C++20 headers-only library with no external software dependencies,
 except for the Google test framework, used to compile the unit tests and automatically downloaded by CMake.
-Building client  applications using the libraries does not require any dependencies.
+Building client applications using the libraries does not require any dependencies.
+The GPU accelerated version requires either CUDA or HIP and requires client applications to link against a library.
 
 #### Folder structure
 
