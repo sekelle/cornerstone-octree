@@ -2,6 +2,7 @@
  * MIT License
  *
  * Copyright (c) 2022 CSCS, ETH Zurich
+ *               2021 University of Basel
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,31 +23,51 @@
  * SOFTWARE.
  */
 
+/*! @file
+ * @brief  GPU hardware specific configuration
+ *
+ * @author Sebastian Keller <sebastian.f.keller@gmail.com>
+ */
+
 #pragma once
 
-#include <cstdio>
+#include <cstdint>
 #include <cuda_runtime.h>
 
-inline void checkErr(cudaError_t err, const char* filename, int lineno, const char* funcName)
-{
-    if (err != cudaSuccess)
-    {
-        const char* errName = cudaGetErrorName(err);
-        const char* errStr  = cudaGetErrorString(err);
-        fprintf(stderr, "CUDA Error at %s:%d. Function %s returned err %d: %s - %s\n", filename, lineno, funcName, err,
-                errName, errStr);
-        exit(EXIT_FAILURE);
-    }
-}
+#include "cstone/cuda/errorcheck.cuh"
 
-#define checkGpuErrors(errcode) checkErr((errcode), __FILE__, __LINE__, #errcode);
-
-static void kernelSuccess(const char kernel[] = "kernel")
+namespace cstone
 {
-    cudaError_t err = cudaDeviceSynchronize();
-    if (err != cudaSuccess)
+
+struct GpuConfig
+{
+//! @brief number of threads per warp
+#if defined(__CUDACC__) && !defined(__HIPCC__)
+    static constexpr int warpSize = 32;
+#else
+    static constexpr int warpSize = 64;
+#endif
+
+    static_assert(warpSize == 32 || warpSize == 64, "warp size has to be 32 or 64");
+
+    //! @brief log2(warpSize)
+    static constexpr int warpSizeLog2 = (warpSize == 32) ? 5 : 6;
+
+    /*! @brief integer type for representing a thread mask, e.g. return value of __ballot_sync()
+     *
+     * This will automatically pick the right type based on the warpSize choice. Do not adapt.
+     */
+    using ThreadMask = std::conditional_t<warpSize == 32, uint32_t, uint64_t>;
+
+    static int getSmCount()
     {
-        fprintf(stderr, "%s launch failed: %s\n", kernel, cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
+        cudaDeviceProp prop;
+        checkGpuErrors(cudaGetDeviceProperties(&prop, 0));
+        return prop.multiProcessorCount;
     }
-}
+
+    //! @brief number of multiprocessors
+    inline static int smCount = getSmCount();
+};
+
+} // namespace cstone
