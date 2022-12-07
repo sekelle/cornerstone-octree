@@ -31,12 +31,13 @@
 
 #include <iostream>
 
+#include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
 #include <thrust/reduce.h>
 
-#include "cstone/halos/discovery.cuh"
-#include "cstone/tree/octree.cuh"
-#include "cstone/tree/octree_internal.cuh"
+#include "cstone/traversal/collisions_gpu.h"
+#include "cstone/tree/update_gpu.cuh"
+#include "cstone/tree/octree_gpu.h"
 
 #include "coord_samples/random.hpp"
 
@@ -57,7 +58,7 @@ int main()
     thrust::device_vector<KeyType> tree    = std::vector<KeyType>{0, nodeRange<KeyType>(0)};
     thrust::device_vector<unsigned> counts = std::vector<unsigned>{numParticles};
 
-    thrust::device_vector<KeyType>       tmpTree;
+    thrust::device_vector<KeyType> tmpTree;
     thrust::device_vector<TreeNodeIndex> workArray;
 
     thrust::device_vector<KeyType> particleCodes(randomBox.particleKeys().begin(), randomBox.particleKeys().end());
@@ -66,9 +67,9 @@ int main()
 
     auto fullBuild = [&]()
     {
-        while(!updateOctreeGpu(thrust::raw_pointer_cast(particleCodes.data()),
-                               thrust::raw_pointer_cast(particleCodes.data() + numParticles),
-                               bucketSize, tree, counts, tmpTree, workArray));
+        while (!updateOctreeGpu(rawPtr(particleCodes), rawPtr(particleCodes) + numParticles, bucketSize, tree, counts,
+                                tmpTree, workArray))
+            ;
     };
 
     float buildTime = timeGpu(fullBuild);
@@ -77,9 +78,8 @@ int main()
 
     auto updateTree = [&]()
     {
-        updateOctreeGpu(thrust::raw_pointer_cast(particleCodes.data()),
-                        thrust::raw_pointer_cast(particleCodes.data() + numParticles),
-                        bucketSize, tree, counts, tmpTree, workArray);
+        updateOctreeGpu(rawPtr(particleCodes), rawPtr(particleCodes) + numParticles, bucketSize, tree, counts, tmpTree,
+                        workArray);
     };
 
     float updateTime = timeGpu(updateTree);
@@ -88,38 +88,54 @@ int main()
 
     // internal tree benchmark
 
-    OctreeGpuDataAnchor<KeyType> octree;
+    OctreeData<KeyType, GpuTag> octree;
     octree.resize(nNodes(tree));
-    auto buildInternal = [&]()
-    {
-        buildInternalOctreeGpu(thrust::raw_pointer_cast(tree.data()), octree.getData());
-    };
+    auto buildInternal = [&]() { buildOctreeGpu(rawPtr(tree), octree.data()); };
 
-    float internalBuildTime = timeGpu(buildInternal);
+    float internalBuildTime                   = timeGpu(buildInternal);
     thrust::host_vector<TreeNodeIndex> ranges = octree.levelRange;
     std::cout << "internal build time " << internalBuildTime / 1000 << std::endl;
     std::cout << "level ranges: ";
-    for (int i = 0; i <= maxTreeLevel<KeyType>{}; ++i) std::cout << ranges[i] << " "; std::cout << std::endl;
+    for (int i = 0; i <= maxTreeLevel<KeyType>{}; ++i)
+        std::cout << ranges[i] << " ";
+    std::cout << std::endl;
 
     // halo discovery benchmark
 
-    thrust::device_vector<BinaryNode<KeyType>> binaryTree(nNodes(tree));
-    createBinaryTreeGpu(thrust::raw_pointer_cast(tree.data()), nNodes(tree),
-                        thrust::raw_pointer_cast(binaryTree.data()));
-
     thrust::device_vector<float> haloRadii(nNodes(tree), 0.01);
-    thrust::device_vector<int>   flags(nNodes(tree), 0);
+    thrust::device_vector<int> flags(nNodes(tree), 0);
 
-    auto findHalosLambda = [&]()
+    auto octreeView      = octree.data();
+    auto findHalosLambda = [octree = octreeView, &box, &tree, &haloRadii, &flags]()
     {
-        findHalosGpu(thrust::raw_pointer_cast(tree.data()),
-                     thrust::raw_pointer_cast(binaryTree.data()),
-                     thrust::raw_pointer_cast(haloRadii.data()),
-                     box, 0, nNodes(tree) / 4,
-                     thrust::raw_pointer_cast(flags.data()));
+        findHalosGpu(octree.prefixes, octree.childOffsets, octree.internalToLeaf, rawPtr(tree), rawPtr(haloRadii), box,
+                     0, octree.numLeafNodes / 4, rawPtr(flags));
     };
 
     float findTime = timeGpu(findHalosLambda);
     std::cout << "halo discovery " << findTime / 1000 << " nNodes(tree): " << nNodes(tree)
               << " count: " << thrust::reduce(flags.begin(), flags.end(), 0) << std::endl;
+
+    {
+        thrust::host_vector<KeyType> prefixes           = octree.prefixes;
+        thrust::host_vector<TreeNodeIndex> childOffsets = octree.childOffsets;
+        thrust::host_vector<TreeNodeIndex> toInternal   = octree.leafToInternal;
+        thrust::host_vector<KeyType> h_tree             = tree;
+        Octree<KeyType> h_octree;
+        h_octree.update(h_tree.data(), nNodes(h_tree));
+
+        thrust::host_vector<float> radii = haloRadii;
+        std::vector<int> h_flags(nNodes(tree), 0);
+
+        OctreeView<KeyType> o = h_octree.data();
+
+        auto findHalosCpuLambda = [&]()
+        {
+            findHalos(o.prefixes, o.childOffsets, o.internalToLeaf, h_tree.data(), radii.data(), box, 0,
+                      nNodes(tree) / 4, h_flags.data());
+        };
+        float findTimeCpu = timeCpu(findHalosCpuLambda);
+        std::cout << "CPU halo discovery " << findTimeCpu << " nNodes(tree): " << nNodes(h_tree)
+                  << " count: " << thrust::reduce(h_flags.begin(), h_flags.end(), 0) << std::endl;
+    }
 }

@@ -35,40 +35,40 @@
 #pragma once
 
 #include "boxoverlap.hpp"
-#include "cstone/tree/octree_internal.hpp"
+#include "cstone/tree/octree.hpp"
 
 namespace cstone
 {
 
-//constexpr int maxCoord = 1u<<maxTreeLevel<KeyType>{};
-//KeyType iboxStart = iMorton<KeyType>(collisionBox.xmin(), collisionBox.ymin(), collisionBox.zmin());
-//int xmax = collisionBox.xmax();
-//int ymax = collisionBox.ymax();
-//int zmax = collisionBox.zmax();
-//if (xmax == maxCoord) xmax--;
-//if (ymax == maxCoord) ymax--;
-//if (zmax == maxCoord) zmax--;
-//KeyType iboxEnd   = iMorton<KeyType>(xmax, ymax, zmax);
+// constexpr int maxCoord = 1u<<maxTreeLevel<KeyType>{};
+// KeyType iboxStart = iMorton<KeyType>(collisionBox.xmin(), collisionBox.ymin(), collisionBox.zmin());
+// int xmax = collisionBox.xmax();
+// int ymax = collisionBox.ymax();
+// int zmax = collisionBox.zmax();
+// if (xmax == maxCoord) xmax--;
+// if (ymax == maxCoord) ymax--;
+// if (zmax == maxCoord) zmax--;
+// KeyType iboxEnd   = iMorton<KeyType>(xmax, ymax, zmax);
 
-//pair<KeyType> commonBox = smallestCommonBox(iboxStart, iboxEnd);
-//int iboxLevel = treeLevel<KeyType>(commonBox[1] - commonBox[0]);
+// pair<KeyType> commonBox = smallestCommonBox(iboxStart, iboxEnd);
+// int iboxLevel = treeLevel<KeyType>(commonBox[1] - commonBox[0]);
 
-//for (int l = 1; l <= iboxLevel; ++l)
+// for (int l = 1; l <= iboxLevel; ++l)
 //{
-//    int octant = octreeDigit(commonBox[0], l);
-//    node = octree.child(node, octant);
-//}
+//     int octant = octreeDigit(commonBox[0], l);
+//     node = octree.child(node, octant);
+// }
 
-//if (octree.isLeaf(node))
+// if (octree.isLeaf(node))
 //{
-//    collisionList.add(node);
-//    return;
-//}
+//     collisionList.add(node);
+//     return;
+// }
 
-template<template<class> class TreeType, class KeyType, class C, class A>
-void singleTraversal(const TreeType<KeyType>& octree, C&& continuationCriterion, A&& endpointAction)
+template<class C, class A>
+HOST_DEVICE_FUN void singleTraversal(const TreeNodeIndex* childOffsets, C&& continuationCriterion, A&& endpointAction)
 {
-    if (!continuationCriterion(0) || octree.isLeaf(0))
+    if (!continuationCriterion(0) || childOffsets[0] == 0)
     {
         // root node is already the endpoint
         endpointAction(0);
@@ -85,17 +85,18 @@ void singleTraversal(const TreeType<KeyType>& octree, C&& continuationCriterion,
     {
         for (int octant = 0; octant < 8; ++octant)
         {
-            TreeNodeIndex child = octree.child(node, octant);
-            bool descend = continuationCriterion(child);
+            TreeNodeIndex child = childOffsets[node] + octant;
+            bool descend        = continuationCriterion(child);
             if (descend)
             {
-                if (octree.isLeaf(child))
+                if (childOffsets[child] == 0)
                 {
-                    endpointAction(octree.cstoneIndex(child));
+                    // endpoint reached with child is a leaf node
+                    endpointAction(child);
                 }
                 else
                 {
-                    assert (stackPos < 128);
+                    assert(stackPos < 128);
                     stack[stackPos++] = child; // push
                 }
             }
@@ -133,20 +134,24 @@ void dualTraversal(const TreeType& octree, TreeNodeIndex a, TreeNodeIndex b, MAC
 {
     using NodePair = util::array<TreeNodeIndex, 2>;
 
-    if (octree.isLeaf(a) && octree.isLeaf(b)) { p2p(a, b); return; }
+    if (octree.isLeaf(a) && octree.isLeaf(b))
+    {
+        p2p(a, b);
+        return;
+    }
 
     NodePair stack[128];
     stack[0] = NodePair{a, b};
 
     int stackPos = 1;
 
-    auto interact = [&octree, &continuation, &m2l, &p2p, &stackPos]
-        (TreeNodeIndex a, TreeNodeIndex b, NodePair* stack_)
+    auto interact = [&octree, &continuation, &m2l, &p2p, &stackPos](TreeNodeIndex a, TreeNodeIndex b, NodePair* stack_)
     {
         if (continuation(a, b))
         {
             if (octree.isLeaf(a) && octree.isLeaf(b)) { p2p(a, b); }
-            else {
+            else
+            {
                 assert(stackPos < 128);
                 stack_[stackPos++] = NodePair{a, b};
             }
@@ -156,12 +161,11 @@ void dualTraversal(const TreeType& octree, TreeNodeIndex a, TreeNodeIndex b, MAC
 
     while (stackPos > 0)
     {
-        NodePair nodePair = stack[--stackPos];
+        NodePair nodePair    = stack[--stackPos];
         TreeNodeIndex target = nodePair[0];
         TreeNodeIndex source = nodePair[1];
 
-        if ((octree.level(target) < octree.level(source) && !octree.isLeaf(target))
-            || octree.isLeaf(source))
+        if ((octree.level(target) < octree.level(source) && !octree.isLeaf(target)) || octree.isLeaf(source))
         {
             int nChildren = (octree.isLeaf(target)) ? 0 : 8;
             for (int octant = 0; octant < nChildren; ++octant)

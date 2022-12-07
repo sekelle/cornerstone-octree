@@ -41,7 +41,7 @@ namespace cstone
 template<class T>
 HOST_DEVICE_FUN constexpr bool overlapTwoRanges(T a, T b, T c, T d)
 {
-    assert(a<=b && c<=d);
+    assert(a <= b && c <= d);
     return b > c && d > a;
 }
 
@@ -59,16 +59,14 @@ HOST_DEVICE_FUN constexpr bool overlapRange(int a, int b, int c, int d)
     assert(a >= -R);
     assert(a < R);
     assert(b > 0);
-    assert(b <= 2*R);
+    assert(b <= 2 * R);
 
     assert(c >= -R);
     assert(c < R);
     assert(d > 0);
-    assert(d <= 2*R);
+    assert(d <= 2 * R);
 
-    return overlapTwoRanges(a,b,c,d) ||
-           overlapTwoRanges(a+R, b+R, c, d) ||
-           overlapTwoRanges(a, b, c+R, d+R);
+    return overlapTwoRanges(a, b, c, d) || overlapTwoRanges(a + R, b + R, c, d) || overlapTwoRanges(a, b, c + R, d + R);
 }
 
 //! @brief check whether two boxes overlap. takes PBC into account, boxes can wrap around
@@ -140,7 +138,7 @@ containedIn(KeyType prefixBitKey, KeyType codeStart, KeyType codeEnd)
 {
     unsigned prefixLength = decodePrefixLength(prefixBitKey);
     KeyType firstPrefix   = decodePlaceholderBit(prefixBitKey);
-    KeyType secondPrefix  = firstPrefix + (KeyType(1) << (3*maxTreeLevel<KeyType>{} - prefixLength));
+    KeyType secondPrefix  = firstPrefix + (KeyType(1) << (3 * maxTreeLevel<KeyType>{} - prefixLength));
     return !(firstPrefix < codeStart || secondPrefix > codeEnd);
 }
 
@@ -150,8 +148,10 @@ HOST_DEVICE_FUN inline int addDelta(int value, int delta, bool pbc)
     constexpr int maxCoordinate = (1u << maxTreeLevel<KeyType>{});
 
     int temp = value + delta;
-    if (pbc) return temp;
-    else     return stl::min(stl::max(0, temp), maxCoordinate);
+    if (pbc)
+        return temp;
+    else
+        return stl::min(stl::max(0, temp), maxCoordinate);
 }
 
 //! @brief create a box with specified radius around node delineated by codeStart/End
@@ -162,9 +162,13 @@ HOST_DEVICE_FUN IBox makeHaloBox(const IBox& nodeBox, RadiusType radius, const B
     int dy = toNBitIntCeil<KeyType>(radius * box.ily());
     int dz = toNBitIntCeil<KeyType>(radius * box.ilz());
 
-    return IBox(addDelta<KeyType>(nodeBox.xmin(), -dx, box.pbcX()), addDelta<KeyType>(nodeBox.xmax(), dx, box.pbcX()),
-                addDelta<KeyType>(nodeBox.ymin(), -dy, box.pbcY()), addDelta<KeyType>(nodeBox.ymax(), dy, box.pbcY()),
-                addDelta<KeyType>(nodeBox.zmin(), -dz, box.pbcZ()), addDelta<KeyType>(nodeBox.zmax(), dz, box.pbcZ()));
+    bool pbcX = (box.boundaryX() == cstone::BoundaryType::periodic);
+    bool pbcY = (box.boundaryY() == cstone::BoundaryType::periodic);
+    bool pbcZ = (box.boundaryZ() == cstone::BoundaryType::periodic);
+
+    return IBox(addDelta<KeyType>(nodeBox.xmin(), -dx, pbcX), addDelta<KeyType>(nodeBox.xmax(), dx, pbcX),
+                addDelta<KeyType>(nodeBox.ymin(), -dy, pbcY), addDelta<KeyType>(nodeBox.ymax(), dy, pbcY),
+                addDelta<KeyType>(nodeBox.zmin(), -dz, pbcZ), addDelta<KeyType>(nodeBox.zmax(), dz, pbcZ));
 }
 
 //! @brief create a box with specified radius around node delineated by codeStart/End
@@ -177,5 +181,75 @@ HOST_DEVICE_FUN IBox makeHaloBox(KeyType codeStart, KeyType codeEnd, RadiusType 
     return makeHaloBox<KeyType>(nodeBox, radius, box);
 }
 
-} // namespace cstone
+//! @brief returns true if the cuboid defined by center and size is contained within the bounding box
+template<class T>
+HOST_DEVICE_FUN bool insideBox(const Vec3<T>& center, const Vec3<T>& size, const Box<T>& box)
+{
+    Vec3<T> globalMin{box.xmin(), box.ymin(), box.zmin()};
+    Vec3<T> globalMax{box.xmax(), box.ymax(), box.zmax()};
+    Vec3<T> boxMin = center - size;
+    Vec3<T> boxMax = center + size;
+    return boxMin[0] >= globalMin[0] && boxMin[1] >= globalMin[1] && boxMin[2] >= globalMin[2] &&
+           boxMax[0] <= globalMax[0] && boxMax[1] <= globalMax[1] && boxMax[2] <= globalMax[2];
+}
 
+//! @brief returns the smallest distance vector of point X to box b, 0 if X is in b
+template<class T>
+HOST_DEVICE_FUN Vec3<T> minDistance(const Vec3<T>& X, const Vec3<T>& bCenter, const Vec3<T>& bSize)
+{
+    Vec3<T> dX = abs(bCenter - X) - bSize;
+    dX += abs(dX);
+    dX *= T(0.5);
+    return dX;
+}
+
+//! @brief returns the smallest periodic distance vector of point X to box b, 0 if X is in b
+template<class T>
+HOST_DEVICE_FUN Vec3<T> minDistance(const Vec3<T>& X, const Vec3<T>& bCenter, const Vec3<T>& bSize, const Box<T>& box)
+{
+    Vec3<T> dX = bCenter - X;
+    dX         = abs(applyPbc(dX, box));
+    dX -= bSize;
+    dX += abs(dX);
+    dX *= T(0.5);
+
+    return dX;
+}
+
+//! @brief returns the smallest distance vector between two boxes, 0 if they overlap
+template<class T>
+HOST_DEVICE_FUN Vec3<T>
+minDistance(const Vec3<T>& aCenter, const Vec3<T>& aSize, const Vec3<T>& bCenter, const Vec3<T>& bSize)
+{
+    Vec3<T> dX = abs(bCenter - aCenter) - aSize - bSize;
+    dX += abs(dX);
+    dX *= T(0.5);
+
+    return dX;
+}
+
+//! @brief returns the smallest periodic distance vector between two boxes, 0 if they overlap
+template<class T>
+HOST_DEVICE_FUN Vec3<T> minDistance(
+    const Vec3<T>& aCenter, const Vec3<T>& aSize, const Vec3<T>& bCenter, const Vec3<T>& bSize, const Box<T>& box)
+{
+    Vec3<T> dX = bCenter - aCenter;
+    dX         = abs(applyPbc(dX, box));
+    dX -= aSize;
+    dX -= bSize;
+    dX += abs(dX);
+    dX *= T(0.5);
+
+    return dX;
+}
+
+//! @brief Convenience wrapper to minDistance. This should only be used for testing.
+template<class KeyType, class T>
+HOST_DEVICE_FUN T minDistanceSq(IBox a, IBox b, const Box<T>& box)
+{
+    auto [aCenter, aSize] = centerAndSize<KeyType>(a, box);
+    auto [bCenter, bSize] = centerAndSize<KeyType>(b, box);
+    return norm2(minDistance(aCenter, aSize, bCenter, bSize, box));
+}
+
+} // namespace cstone

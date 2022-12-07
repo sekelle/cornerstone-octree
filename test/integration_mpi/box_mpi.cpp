@@ -51,7 +51,7 @@ TEST(GlobalBox, localMinMax)
     std::mt19937 g(rd());
     std::shuffle(begin(x), end(x), g);
 
-    auto [gmin, gmax] = localMinMax(begin(x), end(x));
+    auto [gmin, gmax] = MinMax<T>{}(x.data(), x.data() + x.size());
     EXPECT_EQ(gmin, T(1));
     EXPECT_EQ(gmax, T(numElements));
 }
@@ -64,7 +64,7 @@ void makeGlobalBox(int rank, int numRanks)
     std::vector<T> y{val, 2 * val};
     std::vector<T> z{-val, -2 * val};
 
-    Box<T> box = makeGlobalBox(begin(x), end(x), begin(y), begin(z), Box<T>{0, 1});
+    Box<T> box = makeGlobalBox(x.data(), y.data(), z.data(), x.size(), Box<T>{0, 1});
 
     T rVal = numRanks;
     EXPECT_EQ(box.xmin(), -rVal);
@@ -74,29 +74,32 @@ void makeGlobalBox(int rank, int numRanks)
     EXPECT_EQ(box.zmin(), -2 * rVal);
     EXPECT_EQ(box.zmax(), T(-1));
 
+    auto open     = BoundaryType::open;
+    auto periodic = BoundaryType::periodic;
+
     // PBC case
     {
-        Box<T> pbcBox{0, 1, 0, 1, 0, 1, true, true, true};
-        Box<T> newPbcBox = makeGlobalBox(begin(x), end(x), begin(y), begin(z), pbcBox);
+        Box<T> pbcBox{0, 1, 0, 1, 0, 1, periodic, periodic, periodic};
+        Box<T> newPbcBox = makeGlobalBox(x.data(), y.data(), z.data(), x.size(), pbcBox);
         EXPECT_EQ(pbcBox, newPbcBox);
     }
     // partial PBC
     {
-        Box<T> pbcBox{0, 1, 0, 1, 0, 1, false, true, true};
-        Box<T> newPbcBox = makeGlobalBox(begin(x), end(x), begin(y), begin(z), pbcBox);
-        Box<T> refBox{-rVal, rVal, 0, 1, 0, 1, false, true, true};
+        Box<T> pbcBox{0, 1, 0, 1, 0, 1, open, periodic, periodic};
+        Box<T> newPbcBox = makeGlobalBox(x.data(), y.data(), z.data(), x.size(), pbcBox);
+        Box<T> refBox{-rVal, rVal, 0, 1, 0, 1, open, periodic, periodic};
         EXPECT_EQ(refBox, newPbcBox);
     }
     {
-        Box<T> pbcBox{0, 1, 0, 1, 0, 1, true, false, true};
-        Box<T> newPbcBox = makeGlobalBox(begin(x), end(x), begin(y), begin(z), pbcBox);
-        Box<T> refBox{0, 1, T(1), 2 * rVal, 0, 1, true, false, true};
+        Box<T> pbcBox{0, 1, 0, 1, 0, 1, periodic, open, periodic};
+        Box<T> newPbcBox = makeGlobalBox(x.data(), y.data(), z.data(), x.size(), pbcBox);
+        Box<T> refBox{0, 1, T(1), 2 * rVal, 0, 1, periodic, open, periodic};
         EXPECT_EQ(refBox, newPbcBox);
     }
     {
-        Box<T> pbcBox{0, 1, 0, 1, 0, 1, true, true, false};
-        Box<T> newPbcBox = makeGlobalBox(begin(x), end(x), begin(y), begin(z), pbcBox);
-        Box<T> refBox{0, 1, 0, 1, -2 * rVal, T(-1), true, true, false};
+        Box<T> pbcBox{0, 1, 0, 1, 0, 1, periodic, periodic, open};
+        Box<T> newPbcBox = makeGlobalBox(x.data(), y.data(), z.data(), x.size(), pbcBox);
+        Box<T> refBox{0, 1, 0, 1, -2 * rVal, T(-1), periodic, periodic, open};
         EXPECT_EQ(refBox, newPbcBox);
     }
 }

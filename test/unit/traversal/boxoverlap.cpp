@@ -69,7 +69,7 @@ void overlapTest()
     int r = KeyType(1) << (maxTreeLevel<KeyType>{} - level);
 
     // node range: [r,2r]^3
-    IBox target(r, 2*r, r, 2*r, r, 2*r);
+    IBox target(r, 2 * r, r, 2 * r, r, 2 * r);
 
     /// Each test is a separate case
 
@@ -140,12 +140,12 @@ template<class KeyType>
 void makeHaloBoxXYZ()
 {
     constexpr int maxCoord = 1 << maxTreeLevel<KeyType>{};
-    int r = KeyType(1) << (maxTreeLevel<KeyType>{} - 3);
+    int r                  = KeyType(1) << (maxTreeLevel<KeyType>{} - 3);
 
-    Box<float> box(0, 1, 0, 0.5, 0, 1.0/3);
-    IBox nodeBox(r, 2*r, r, 2*r, r, 2*r);
+    Box<float> box(0, 1, 0, 0.5, 0, 1.0 / 3);
+    IBox nodeBox(r, 2 * r, r, 2 * r, r, 2 * r);
 
-    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 1.0/maxCoord, box);
+    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 1.0 / maxCoord, box);
     IBox refBox{r - 1, 2 * r + 1, r - 2, 2 * r + 2, r - 3, 2 * r + 3};
     EXPECT_EQ(haloBox, refBox);
 }
@@ -161,12 +161,12 @@ template<class KeyType>
 void makeHaloBoxUnderflow()
 {
     constexpr int maxCoord = 1 << maxTreeLevel<KeyType>{};
-    int r = KeyType(1) << (maxTreeLevel<KeyType>{} - 1);
+    int r                  = KeyType(1) << (maxTreeLevel<KeyType>{} - 1);
 
     Box<float> box(0, 1);
     IBox nodeBox(0, r);
 
-    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 0.99/maxCoord, box);
+    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 0.99 / maxCoord, box);
     IBox refBox{0, r + 1, 0, r + 1, 0, r + 1};
     EXPECT_EQ(haloBox, refBox);
 }
@@ -182,12 +182,12 @@ template<class KeyType>
 void makeHaloBoxOverflow()
 {
     constexpr int maxCoord = 1 << maxTreeLevel<KeyType>{};
-    int r = KeyType(1) << (maxTreeLevel<KeyType>{} - 1);
+    int r                  = KeyType(1) << (maxTreeLevel<KeyType>{} - 1);
 
     IBox nodeBox(r, 2 * r, r, 2 * r, r, 2 * r);
     Box<float> box(0, 1);
 
-    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 0.99/maxCoord, box);
+    IBox haloBox = makeHaloBox<KeyType>(nodeBox, 0.99 / maxCoord, box);
     IBox refBox{r - 1, 2 * r, r - 1, 2 * r, r - 1, 2 * r};
     EXPECT_EQ(haloBox, refBox);
 }
@@ -204,18 +204,18 @@ void makeHaloBoxPbc()
 {
     int r = 1 << (maxTreeLevel<KeyType>{} - 3);
 
-    IBox nodeBox(r, 2*r, r, 2*r, r, 2*r);
-    Box<double> bbox(0, 1, true);
+    IBox nodeBox(r, 2 * r, r, 2 * r, r, 2 * r);
+    Box<double> bbox(0, 1, cstone::BoundaryType::periodic);
 
     {
         double radius = 0.999 / r; // normalize(radius) = 7.992
-        IBox haloBox = makeHaloBox<KeyType>(nodeBox, radius, bbox);
+        IBox haloBox  = makeHaloBox<KeyType>(nodeBox, radius, bbox);
         IBox refBox{r - 8, 2 * r + 8, r - 8, 2 * r + 8, r - 8, 2 * r + 8};
         EXPECT_EQ(haloBox, refBox);
     }
     {
         double radius = 1.000001 / 8; // normalize(radius) = r + epsilon
-        IBox haloBox = makeHaloBox<KeyType>(nodeBox, radius, bbox);
+        IBox haloBox  = makeHaloBox<KeyType>(nodeBox, radius, bbox);
         IBox refBox{-1, 3 * r + 1, -1, 3 * r + 1, -1, 3 * r + 1};
         EXPECT_EQ(haloBox, refBox);
     }
@@ -277,7 +277,7 @@ template<class KeyType>
 void excludeRangeContainedIn()
 {
     KeyType rangeStart = pad(KeyType(01), 3);
-    KeyType rangeEnd = pad(KeyType(02), 3);
+    KeyType rangeEnd   = pad(KeyType(02), 3);
 
     {
         KeyType prefix = 0b1001;
@@ -297,7 +297,7 @@ void excludeRangeContainedIn()
     }
 
     rangeStart = 0;
-    rangeEnd = pad(KeyType(01), 3);
+    rangeEnd   = pad(KeyType(01), 3);
     {
         KeyType prefix = 0b1000;
         EXPECT_TRUE(containedIn(prefix, rangeStart, rangeEnd));
@@ -312,4 +312,80 @@ TEST(BoxOverlap, excludeRangeContainedIn)
 {
     excludeRangeContainedIn<unsigned>();
     excludeRangeContainedIn<uint64_t>();
+}
+
+TEST(BoxOverlap, insideBox)
+{
+    using T = double;
+    Box<T> box(0, 1);
+    {
+        Vec3<T> bcenter{0.75, 0.25, 0.25};
+        Vec3<T> bsize{0.25, 0.25, 0.25};
+        EXPECT_TRUE(insideBox(bcenter, bsize, box));
+    }
+    {
+        Vec3<T> bcenter{0.75, 0.25, 0.25};
+        Vec3<T> bsize{0.26, 0.25, 0.25};
+        EXPECT_FALSE(insideBox(bcenter, bsize, box));
+    }
+    {
+        Vec3<T> bcenter{0.1, 0.1, 0.1};
+        Vec3<T> bsize{0.1, 0.11, 0.1};
+        EXPECT_FALSE(insideBox(bcenter, bsize, box));
+    }
+}
+
+TEST(BoxOverlap, minPointDistance)
+{
+    using T       = double;
+    using KeyType = unsigned;
+
+    constexpr unsigned mc = maxCoord<KeyType>{};
+
+    {
+        Box<T> box(0, 1);
+        IBox ibox(0, mc / 2);
+
+        T px = (mc / 2.0 + 1) / mc;
+        Vec3<T> X{px, px, px};
+
+        auto [center, size] = centerAndSize<KeyType>(ibox, box);
+
+        T probe = std::sqrt(norm2(minDistance(X, center, size, box)));
+        EXPECT_NEAR(std::sqrt(3) / mc, probe, 1e-10);
+    }
+}
+
+TEST(BoxOverlap, minDistance)
+{
+    using T = double;
+
+    {
+        Box<T> box(0, 2, 0, 3, 0, 4);
+
+        Vec3<T> aCenter{1., 1., 1.};
+        Vec3<T> bCenter{1., 2., 3.};
+
+        Vec3<T> aSize{0.1, 0.1, 0.1};
+        Vec3<T> bSize{0.1, 0.1, 0.1};
+
+        Vec3<T> dist = minDistance(aCenter, aSize, bCenter, bSize, box);
+        EXPECT_NEAR(dist[0], 0., 1e-10);
+        EXPECT_NEAR(dist[1], 0.8, 1e-10);
+        EXPECT_NEAR(dist[2], 1.8, 1e-10);
+    }
+    {
+        Box<T> boxPbc(0, 2, 0, 3, 0, 4, BoundaryType::periodic, BoundaryType::periodic, BoundaryType::periodic);
+
+        Vec3<T> aCenter{0.1, 0.1, 0.1};
+        Vec3<T> bCenter{1.9, 2.9, 3.9};
+
+        Vec3<T> aSize{0.1, 0.1, 0.1};
+        Vec3<T> bSize{0.1, 0.1, 0.1};
+
+        Vec3<T> dist = minDistance(aCenter, aSize, bCenter, bSize, boxPbc);
+        EXPECT_NEAR(dist[0], 0., 1e-10);
+        EXPECT_NEAR(dist[1], 0., 1e-10);
+        EXPECT_NEAR(dist[2], 0., 1e-10);
+    }
 }

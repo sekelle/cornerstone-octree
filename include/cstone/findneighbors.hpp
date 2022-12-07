@@ -35,26 +35,34 @@
 
 #include "cstone/primitives/stl.hpp"
 #include "cstone/sfc/sfc.hpp"
+#include "cstone/traversal/traversal.hpp"
 #include "cstone/tree/definitions.h"
 #include "cstone/util/array.hpp"
+#include "cstone/util/gsl-lite.hpp"
+#include "cstone/util/tuple.hpp"
 
 namespace cstone
 {
 
 /*! @brief compute squared distance, taking PBC into account
  *
- * Note that if box.pbc{X,Y,Z} is false, the result is identical to distancesq below.
+ * Note that if pbc{X,Y,Z} is false, the result is identical to distancesq below.
  */
 template<class T>
 HOST_DEVICE_FUN constexpr T distanceSqPbc(T x1, T y1, T z1, T x2, T y2, T z2, const Box<T>& box)
 {
+
+    bool pbcX = (box.boundaryX() == BoundaryType::periodic);
+    bool pbcY = (box.boundaryY() == BoundaryType::periodic);
+    bool pbcZ = (box.boundaryZ() == BoundaryType::periodic);
+
     T dx = x1 - x2;
     T dy = y1 - y2;
     T dz = z1 - z2;
     // this folds d into the periodic range [-l/2, l/2] for each dimension if enabled
-    dx -= box.pbcX() * box.lx() * std::rint(dx * box.ilx());
-    dy -= box.pbcY() * box.ly() * std::rint(dy * box.ily());
-    dz -= box.pbcZ() * box.lz() * std::rint(dz * box.ilz());
+    dx -= pbcX * box.lx() * std::rint(dx * box.ilx());
+    dy -= pbcY * box.ly() * std::rint(dy * box.ily());
+    dz -= pbcZ * box.lz() * std::rint(dz * box.ilz());
 
     return dx * dx + dy * dy + dz * dz;
 }
@@ -118,6 +126,10 @@ findNeighborBoxes(T x, T y, T z, T radiusSq, unsigned level, const Box<T>& bbox,
     constexpr int maxCoord = 1u << maxTreeLevel<KeyType>{};
     int cubeLength         = maxCoord >> level;
 
+    bool pbcX = (bbox.boundaryX() == BoundaryType::periodic);
+    bool pbcY = (bbox.boundaryY() == BoundaryType::periodic);
+    bool pbcZ = (bbox.boundaryZ() == BoundaryType::periodic);
+
     int mask = ~(cubeLength - 1);
     int ix   = stl::min(int((x - bbox.xmin()) * maxCoord * bbox.ilx()), maxCoord - 1) & mask;
     int iy   = stl::min(int((y - bbox.ymin()) * maxCoord * bbox.ily()), maxCoord - 1) & mask;
@@ -142,12 +154,12 @@ findNeighborBoxes(T x, T y, T z, T radiusSq, unsigned level, const Box<T>& bbox,
     bool hyu       = ibox.ymax() == maxCoord;
     bool hzd       = ibox.zmin() == 0;
     bool hzu       = ibox.zmax() == maxCoord;
-    bool stepXdown = !hxd || (bbox.pbcX() && level > 1);
-    bool stepXup   = !hxu || (bbox.pbcX() && level > 1);
-    bool stepYdown = !hyd || (bbox.pbcY() && level > 1);
-    bool stepYup   = !hyu || (bbox.pbcY() && level > 1);
-    bool stepZdown = !hzd || (bbox.pbcZ() && level > 1);
-    bool stepZup   = !hzu || (bbox.pbcZ() && level > 1);
+    bool stepXdown = !hxd || (pbcX && level > 1);
+    bool stepXup   = !hxu || (pbcX && level > 1);
+    bool stepYdown = !hyd || (pbcY && level > 1);
+    bool stepYup   = !hyu || (pbcY && level > 1);
+    bool stepZdown = !hzd || (pbcZ && level > 1);
+    bool stepZup   = !hzu || (pbcZ && level > 1);
 
     int nBoxes  = 0;
     int iBoxPbc = 27;
@@ -285,12 +297,12 @@ HOST_DEVICE_FUN void searchBoxes(const KeyType* searchKeys,
                                  const T* y,
                                  const T* z,
                                  T radiusSq,
-                                 int* neighbors,
-                                 int* neighborsCount,
-                                 int ngmax,
+                                 LocalIndex* neighbors,
+                                 unsigned* neighborsCount,
+                                 unsigned ngmax,
                                  F&& distance)
 {
-    int numNeighbors = *neighborsCount;
+    unsigned numNeighbors = *neighborsCount;
     for (int ibox = firstBox; ibox < lastBox; ++ibox)
     {
         KeyType searchBox = searchKeys[ibox];
@@ -306,7 +318,7 @@ HOST_DEVICE_FUN void searchBoxes(const KeyType* searchKeys,
 
             if (distance(x[j], y[j], z[j]) < radiusSq)
             {
-                if (numNeighbors < ngmax) { neighbors[numNeighbors] = int(j); }
+                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
                 numNeighbors++;
             }
         }
@@ -346,10 +358,10 @@ HOST_DEVICE_FUN void findNeighbors(LocalIndex id,
                                    const T* h,
                                    const Box<T>& box,
                                    const KeyType* particleKeys,
-                                   int* neighbors,
-                                   int* neighborsCount,
+                                   LocalIndex* neighbors,
+                                   unsigned* neighborsCount,
                                    LocalIndex numParticleKeys,
-                                   int ngmax)
+                                   unsigned ngmax)
 {
     // SPH convention is search radius = 2 * h
     T radius   = 2 * h[id];
@@ -369,7 +381,7 @@ HOST_DEVICE_FUN void findNeighbors(LocalIndex id,
     int nBoxes  = boxCodeIndices[0];
     int iBoxPbc = boxCodeIndices[1];
 
-    int numNeighbors = 0;
+    unsigned numNeighbors = 0;
 
     // search non-PBC boxes
     searchBoxes(neighborCodes, 0, nBoxes, level, particleKeys, numParticleKeys, id, x, y, z, radiusSq, neighbors,
@@ -394,8 +406,8 @@ void findNeighbors(const T* x,
                    LocalIndex numParticles,
                    const Box<T>& box,
                    const KeyType* particleKeys,
-                   int* neighbors,
-                   int* neighborsCount,
+                   LocalIndex* neighbors,
+                   unsigned* neighborsCount,
                    int ngmax)
 {
     LocalIndex numWork = lastId - firstId;
@@ -407,6 +419,109 @@ void findNeighbors(const T* x,
         findNeighbors(id, x, y, z, h, box, particleKeys, neighbors + i * ngmax, neighborsCount + i, numParticles,
                       ngmax);
     }
+}
+
+template<class KeyType, class T>
+void nodeFpCenters(gsl::span<const typename KeyType::ValueType> prefixes,
+                   Vec3<T>* centers,
+                   Vec3<T>* sizes,
+                   const Box<T>& box)
+{
+    using KeyInt = typename KeyType::ValueType;
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < prefixes.size(); ++i)
+    {
+        KeyInt prefix                   = prefixes[i];
+        KeyInt startKey                 = decodePlaceholderBit(prefix);
+        unsigned level                  = decodePrefixLength(prefix) / 3;
+        auto nodeBox                    = sfcIBox(KeyType(startKey), level);
+        util::tie(centers[i], sizes[i]) = centerAndSize<KeyInt>(nodeBox, box);
+    }
+}
+
+template<class T>
+HOST_DEVICE_FUN void findNeighborsT(LocalIndex i,
+                                    const T* x,
+                                    const T* y,
+                                    const T* z,
+                                    const T* h,
+                                    const TreeNodeIndex* childOffsets,
+                                    const TreeNodeIndex* toLeafOrder,
+                                    const LocalIndex* layout,
+                                    const Vec3<T>* centers,
+                                    const Vec3<T>* sizes,
+                                    const Box<T>& box,
+                                    unsigned ngmax,
+                                    LocalIndex* neighbors,
+                                    unsigned* nc)
+{
+    T xi = x[i];
+    T yi = y[i];
+    T zi = z[i];
+    T hi = h[i];
+
+    T radiusSq = 4.0 * hi * hi;
+    Vec3<T> particle{xi, yi, zi};
+    unsigned numNeighbors = 0;
+
+    auto pbc    = BoundaryType::periodic;
+    bool anyPbc = box.boundaryX() == pbc || box.boundaryY() == pbc || box.boundaryZ() == pbc;
+    bool usePbc = anyPbc && !insideBox(particle, {2.0 * hi, 2.0 * hi, 2.0 * hi}, box);
+
+    auto overlapsPbc = [particle, radiusSq, centers, sizes, &box](TreeNodeIndex idx)
+    {
+        auto nodeCenter = centers[idx];
+        auto nodeSize   = sizes[idx];
+        return norm2(minDistance(particle, nodeCenter, nodeSize, box)) < radiusSq;
+    };
+
+    auto overlaps = [particle, radiusSq, centers, sizes](TreeNodeIndex idx)
+    {
+        auto nodeCenter = centers[idx];
+        auto nodeSize   = sizes[idx];
+        return norm2(minDistance(particle, nodeCenter, nodeSize)) < radiusSq;
+    };
+
+    auto searchBoxPbc = [i, particle, radiusSq, layout, toLeafOrder, centers, sizes, x, y, z, ngmax, neighbors,
+                         &numNeighbors, &box](TreeNodeIndex idx)
+    {
+        TreeNodeIndex leafIdx    = toLeafOrder[idx];
+        LocalIndex firstParticle = layout[leafIdx];
+        LocalIndex lastParticle  = layout[leafIdx + 1];
+
+        for (LocalIndex j = firstParticle; j < lastParticle; ++j)
+        {
+            if (j == i) { continue; }
+            if (distanceSqPbc(x[j], y[j], z[j], particle[0], particle[1], particle[2], box) < radiusSq)
+            {
+                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
+                numNeighbors++;
+            }
+        }
+    };
+
+    auto searchBox = [i, particle, radiusSq, layout, toLeafOrder, centers, sizes, x, y, z, ngmax, neighbors,
+                      &numNeighbors](TreeNodeIndex idx)
+    {
+        TreeNodeIndex leafIdx    = toLeafOrder[idx];
+        LocalIndex firstParticle = layout[leafIdx];
+        LocalIndex lastParticle  = layout[leafIdx + 1];
+
+        for (LocalIndex j = firstParticle; j < lastParticle; ++j)
+        {
+            if (j == i) { continue; }
+            if (distancesq(x[j], y[j], z[j], particle[0], particle[1], particle[2]) < radiusSq)
+            {
+                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
+                numNeighbors++;
+            }
+        }
+    };
+
+    if (usePbc) { singleTraversal(childOffsets, overlapsPbc, searchBoxPbc); }
+    else { singleTraversal(childOffsets, overlaps, searchBox); }
+
+    *nc = numNeighbors;
 }
 
 } // namespace cstone
