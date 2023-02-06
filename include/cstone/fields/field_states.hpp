@@ -75,6 +75,14 @@ public:
     }
 
     bool isAllocated(size_t fieldIdx) const { return fieldStates_[fieldIdx] != State::unused; }
+    bool isConserved(size_t fieldIdx) const { return fieldStates_[fieldIdx] == State::conserved; }
+
+    bool isAllocated(const std::string& field) const
+    {
+        size_t fieldIdx =
+            std::find(DataType::fieldNames.begin(), DataType::fieldNames.end(), field) - DataType::fieldNames.begin();
+        return isAllocated(fieldIdx);
+    }
 
     //! @brief indicate that @p fields are currently not required
     template<class... Fields>

@@ -222,6 +222,8 @@ public:
         focusTree_.updateCounts(keyView, global_.treeLeaves(), global_.nodeCounts(), std::get<0>(scratch));
         focusTree_.updateMinMac(box(), global_.assignment(), global_.treeLeaves(), invThetaEff);
 
+        focusTree_.updateGeoCenters(box());
+
         auto octreeView            = focusTree_.octreeViewAcc();
         const KeyType* focusLeaves = focusTree_.treeLeavesAcc().data();
 
@@ -263,6 +265,10 @@ public:
 
         if (firstCall_)
         {
+            // first rough convergence to avoid computing expansion centers of large nodes with a lot of particles
+            focusTree_.converge(box(), keyView, peers, global_.assignment(), global_.treeLeaves(), global_.nodeCounts(),
+                                1.0, std::get<0>(scratch));
+
             int converged = 0;
             while (converged != numRanks_)
             {
@@ -281,6 +287,8 @@ public:
         focusTree_.updateCenters(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(m), global_.assignment(), global_.octree(),
                                  box(), std::get<0>(scratch), std::get<1>(scratch));
         focusTree_.updateMacs(box(), global_.assignment(), global_.treeLeaves());
+
+        focusTree_.updateGeoCenters(box());
 
         auto octreeView            = focusTree_.octreeViewAcc();
         const KeyType* focusLeaves = focusTree_.treeLeavesAcc().data();
@@ -329,6 +337,18 @@ public:
     gsl::span<const LocalIndex> layout() const { return {rawPtr(layoutAcc_), layoutAcc_.size()}; }
     //! @brief return the coordinate bounding box from the previous sync call
     const Box<T>& box() const { return global_.box(); }
+
+    OctreeNsView<T, KeyType> octreeNsViewAcc() const
+    {
+        auto v = focusTree_.octreeViewAcc();
+        return {v.prefixes,
+                v.childOffsets,
+                v.internalToLeaf,
+                v.levelRange,
+                rawPtr(layoutAcc_),
+                focusTree_.geoCentersAcc().data(),
+                focusTree_.geoSizesAcc().data()};
+    }
 
 private:
     //! @brief bounds initialization on first call, use all particles
