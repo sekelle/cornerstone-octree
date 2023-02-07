@@ -118,20 +118,19 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
 
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert2D(unsigned px, unsigned py, int order) noexcept
+iHilbert2D(unsigned px, unsigned py) noexcept
 {
-    // assert(px < (1u << maxTreeLevel<KeyType>{}));
-    // assert(py < (1u << maxTreeLevel<KeyType>{}));
+    assert(px < (1u << maxTreeLevel<KeyType>{}));
+    assert(py < (1u << maxTreeLevel<KeyType>{}));
 
     unsigned xi, yi;
     unsigned temp;
     KeyType key = 0;
 
-    /* for (int i = maxTreeLevel<KeyType>{} - 1; i >= 0; i--) */
-    for (int i = order - 1; i >= 0; i--)
+    for (int level = maxTreeLevel<KeyType>{} - 1; level >= 0; level--)
     {
-        xi = (px >> i) & 1u; // Get bit i of x.
-        yi = (py >> i) & 1u; // Get bit i of y.
+        xi = (px >> level) & 1u; // Get bit level of x.
+        yi = (py >> level) & 1u; // Get bit level of y.
 
         if (yi == 0)
         {
@@ -192,16 +191,18 @@ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned> decodeHilbert(K
 
 // Lam and Shapiro inverse function of hilbert
 template<class KeyType>
-HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2D(KeyType key, unsigned order) noexcept
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2D(KeyType key) noexcept
 {
-    unsigned i, sa, sb;
+    unsigned sa, sb;
     unsigned x = 0, y = 0, temp = 0;
-    for (i = 0; i < 2 * order; i += 2)
+    unsigned order = maxTreeLevel<KeyType>{};
+
+    for (unsigned level = 0; level < 2 * order; level += 2)
     {
-        // Get bit i+1 of key.
-        sa = (key >> (i + 1)) & 1;
-        // Get bit i of key.
-        sb = (key >> i) & 1;
+        // Get bit level+1 of key.
+        sa = (key >> (level + 1)) & 1;
+        // Get bit level of key.
+        sb = (key >> level) & 1;
         if ((sa ^ sb) == 0)
         {
             // If sa,sb = 00 or 11,
@@ -224,9 +225,9 @@ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2D(KeyType k
 
 //! @brief inverse function of iHilbert 32 bit only up to oder 16 but works at constant time.
 template<class KeyType>
-HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2DConstant(KeyType key, unsigned order) noexcept
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2DConstant(KeyType key) noexcept
 {
-    // unsigned order = maxTreeLevel<KeyType>{};
+    unsigned order = maxTreeLevel<KeyType>{};
 
     key = key | (0x55555555 << 2 * order); // Pad key on left with 01
 

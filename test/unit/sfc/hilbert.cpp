@@ -45,8 +45,7 @@ template<class KeyType>
 void inversionTest2D()
 {
     int numKeys  = 1000;
-    auto n       = maxTreeLevel<KeyType>{};
-    int maxCoord = (1 << n) - 1;
+    int maxCoord = (1 << maxTreeLevel<KeyType>{}) - 1;
 
     std::mt19937 gen;
     std::uniform_int_distribution<unsigned> distribution(0, maxCoord);
@@ -61,8 +60,8 @@ void inversionTest2D()
 
     for (int i = 0; i < numKeys; ++i)
     {
-        KeyType hilbertKey = iHilbert2D<KeyType>(x[i], y[i], n);
-        auto [a, b] = decodeHilbert2D<KeyType>(hilbertKey, n);
+        KeyType hilbertKey = iHilbert2D<KeyType>(x[i], y[i]);
+        auto [a, b] = decodeHilbert2D<KeyType>(hilbertKey);
         EXPECT_EQ(x[i], a);
         EXPECT_EQ(y[i], b);
     }
@@ -76,15 +75,15 @@ TEST(HilbertCode, inversion2D)
 
 //! @brief 2D test the 2D Hilbert curve of order 1 and 2
 template<class KeyType>
-void Hilbert2D(const int n)
+void Hilbert2D(int order)
 {
-    for (unsigned xi = 0; xi < pow(2, n); ++xi)
+    for (unsigned xi = 0; xi < pow(2, order); ++xi)
     {
-        for (unsigned yi = 0; yi < pow(2, n); ++yi)
+        for (unsigned yi = 0; yi < pow(2, order); ++yi)
         {
 
-            KeyType key = iHilbert2D<KeyType>(xi, yi, n);
-            auto t      = decodeHilbert2D<KeyType>(key, n);
+            KeyType key = iHilbert2D<KeyType>(xi, yi);
+            auto t      = decodeHilbert2D<KeyType>(key);
             EXPECT_EQ(xi, util::get<0>(t));
             EXPECT_EQ(yi, util::get<1>(t));
         }
