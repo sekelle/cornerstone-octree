@@ -55,8 +55,7 @@ namespace cstone
  *                                The order in which the incoming ranges are grouped is random.
  * @return                        (newStart, newEnd) tuple of indices delimiting the new range of assigned
  *                                particles post-exchange. Note: this range may contain left-over particles
- *                                from the previous assignment. Those can be removed with a subsequent call to
- *                                compactParticles().
+ *                                from the previous assignment.
  *
  *  Example: If sendList[ri] contains the range [upper, lower), all elements (arrays+inputOffset)[ordering[upper:lower]]
  *           will be sent to rank ri. At the destination ri, the incoming elements
@@ -78,8 +77,9 @@ std::tuple<LocalIndex, LocalIndex> exchangeParticles(const SendList& sendList,
     constexpr int domainExchangeTag = static_cast<int>(P2pTags::domainExchange);
     constexpr int numArrays         = sizeof...(Arrays);
     constexpr util::array<size_t, numArrays> elementSizes{sizeof(std::decay_t<decltype(*arrays)>)...};
-    constexpr auto indices  = makeIntegralTuple(std::make_index_sequence<numArrays>{});
-    size_t bytesPerParticle = std::accumulate(elementSizes.begin(), elementSizes.end(), size_t(0));
+    constexpr auto indices            = makeIntegralTuple(std::make_index_sequence<numArrays>{});
+    constexpr size_t bytesPerParticle = std::accumulate(elementSizes.begin(), elementSizes.end(), size_t(0));
+    using TransferType                = std::conditional_t<bytesPerParticle >= 8, uint64_t, uint32_t>;
 
     int numRanks = int(sendList.size());
 
@@ -97,15 +97,16 @@ std::tuple<LocalIndex, LocalIndex> exchangeParticles(const SendList& sendList,
         while (elementsSent < sendCount)
         {
             size_t elementsRemaining = sendCount - elementsSent;
-            size_t nextSendCount =
-                std::min(size_t(std::numeric_limits<int>::max()) / bytesPerParticle, elementsRemaining);
+            size_t nextSendCount     = std::min(
+                size_t(std::numeric_limits<int>::max() * sizeof(TransferType)) / bytesPerParticle, elementsRemaining);
 
             util::array<size_t, numArrays> arrayByteOffsets = nextSendCount * elementSizes;
             std::exclusive_scan(arrayByteOffsets.begin(), arrayByteOffsets.end(), arrayByteOffsets.begin(), size_t(0));
 
             std::vector<char> sendBuffer(nextSendCount * bytesPerParticle);
-            auto gatherArray = [sendPtr = sendBuffer.data(), count = nextSendCount, ordering, &sourceArrays, &arrayByteOffsets,
-                                &elementSizes, rStart = sends.rangeStart(0) + elementsSent](auto arrayIndex)
+            auto gatherArray = [sendPtr = sendBuffer.data(), count = nextSendCount, ordering, &sourceArrays,
+                                &arrayByteOffsets, &elementSizes,
+                                rStart = sends.rangeStart(0) + elementsSent](auto arrayIndex)
             {
                 size_t outputOffset = arrayByteOffsets[arrayIndex];
                 char* bufferPtr     = sendPtr + outputOffset;
@@ -117,7 +118,9 @@ std::tuple<LocalIndex, LocalIndex> exchangeParticles(const SendList& sendList,
             };
             for_each_tuple(gatherArray, indices);
 
-            mpiSendAsync(sendBuffer.data(), nextSendCount * bytesPerParticle, destinationRank, domainExchangeTag, sendRequests);
+            mpiSendAsync(reinterpret_cast<TransferType*>(sendBuffer.data()),
+                         iceil(nextSendCount * bytesPerParticle, sizeof(TransferType)), destinationRank,
+                         domainExchangeTag, sendRequests);
             elementsSent += nextSendCount;
             sendBuffers.push_back(std::move(sendBuffer));
         }
@@ -168,28 +171,27 @@ std::tuple<LocalIndex, LocalIndex> exchangeParticles(const SendList& sendList,
         for_each_tuple(gatherArray, indices);
     }
 
-    std::vector<char> receiveBuffer;
+    std::vector<TransferType> receiveBuffer;
     while (numParticlesPresent != numParticlesAssigned)
     {
         MPI_Status status;
         MPI_Probe(MPI_ANY_SOURCE, domainExchangeTag, MPI_COMM_WORLD, &status);
         int receiveRank = status.MPI_SOURCE;
-        int receiveCountBytes;
-        MPI_Get_count(&status, MPI_CHAR, &receiveCountBytes);
+        int receiveCountTransfer;
+        MPI_Get_count(&status, MpiType<TransferType>{}, &receiveCountTransfer);
 
-        size_t receiveCount = receiveCountBytes / bytesPerParticle;
-        assert(receiveCountBytes % bytesPerParticle == 0);
+        size_t receiveCount = (receiveCountTransfer * sizeof(TransferType)) / bytesPerParticle;
         assert(numParticlesPresent + receiveCount <= numParticlesAssigned);
 
         util::array<size_t, numArrays> arrayByteOffsets = receiveCount * elementSizes;
         std::exclusive_scan(arrayByteOffsets.begin(), arrayByteOffsets.end(), arrayByteOffsets.begin(), size_t(0));
 
-        receiveBuffer.resize(receiveCountBytes);
-        mpiRecvSync(receiveBuffer.data(), receiveCountBytes, receiveRank, domainExchangeTag, &status);
+        receiveBuffer.resize(receiveCountTransfer);
+        mpiRecvSync(receiveBuffer.data(), receiveCountTransfer, receiveRank, domainExchangeTag, &status);
 
         for (int arrayIndex = 0; arrayIndex < numArrays; ++arrayIndex)
         {
-            auto source = receiveBuffer.begin() + arrayByteOffsets[arrayIndex];
+            auto source = reinterpret_cast<char*>(receiveBuffer.data()) + arrayByteOffsets[arrayIndex];
             std::copy(source, source + receiveCount * elementSizes[arrayIndex], destinationArrays[arrayIndex]);
             destinationArrays[arrayIndex] += receiveCount * elementSizes[arrayIndex];
         }
