@@ -61,7 +61,7 @@ void inversionTest2D()
     for (int i = 0; i < numKeys; ++i)
     {
         KeyType hilbertKey = iHilbert2D<KeyType>(x[i], y[i]);
-        auto [a, b] = decodeHilbert2D<KeyType>(hilbertKey);
+        auto [a, b]        = decodeHilbert2D<KeyType>(hilbertKey);
         EXPECT_EQ(x[i], a);
         EXPECT_EQ(y[i], b);
     }

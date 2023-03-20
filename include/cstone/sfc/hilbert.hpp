@@ -108,7 +108,6 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
     return key;
 }
 
-
 /*! @brief compute the Hilbert key for a 2D point of integer coordinates
  *
  * @tparam     KeyType   32- or 64-bit unsigned integer
@@ -117,8 +116,8 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
  */
 
 template<class KeyType>
-constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert2D(unsigned px, unsigned py) noexcept
+constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType> iHilbert2D(unsigned px,
+                                                                                                   unsigned py) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
