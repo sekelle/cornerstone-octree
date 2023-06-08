@@ -56,6 +56,7 @@
 #include <tuple>
 
 #include "definitions.h"
+#include "stl.hpp"
 #include "tuple.hpp"
 
 namespace cstone
