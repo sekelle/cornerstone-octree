@@ -39,7 +39,6 @@
 
 #include "definitions.h"
 #include "gsl-lite.hpp"
-#include "reallocate.hpp"
 
 namespace cstone
 {

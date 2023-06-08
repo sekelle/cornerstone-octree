@@ -309,15 +309,18 @@ public:
         numInternalNodes = (numLeafNodes - 1) / 7;
         numNodes         = numLeafNodes + numInternalNodes;
 
-        lowMemReallocate(numNodes, 1.01, {}, std::tie(prefixes, internalToLeaf, leafToInternal, childOffsets));
+        prefixes.resize(numNodes);
+        internalToLeaf.resize(numNodes);
+        leafToInternal.resize(numNodes);
+        childOffsets.resize(numNodes);
         // +1 to accommodate nodeOffsets in FocusedOctreeCore::update when numNodes == 1
-        reallocate(childOffsets, numNodes + 1, 1.01);
+        childOffsets.resize(numNodes + 1);
 
         TreeNodeIndex parentSize = std::max(1, (numNodes - 1) / 8);
-        reallocateDestructive(parents, parentSize, 1.01);
+        parents.resize(parentSize);
 
         //+1 due to level 0 and +1 due to the upper bound for the last level
-        reallocateDestructive(levelRange, maxTreeLevel<KeyType>{} + 2, 1.01);
+        levelRange.resize(maxTreeLevel<KeyType>{} + 2);
     }
 
     OctreeView<KeyType> data()

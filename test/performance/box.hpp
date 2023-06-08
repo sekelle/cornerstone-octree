@@ -81,19 +81,6 @@ HOST_DEVICE_FUN constexpr int pbcAdjust(int x)
     return (ret >= R) ? ret - R : ret;
 }
 
-//! @brief maps x into the range [-R/2+1: R/2+1] (-511 to 512 with R = 1024)
-template<int R>
-HOST_DEVICE_FUN constexpr int pbcDistance(int x)
-{
-    // this version handles x outside -R, R
-    // int roundAwayFromZero = (x > 0) ? x + R/2 : x - R/2;
-    // return x -= R * (roundAwayFromZero / R);
-    assert(x >= -R);
-    assert(x <= R);
-    int ret = (x <= -R / 2) ? x + R : x;
-    return (ret > R / 2) ? ret - R : ret;
-}
-
 enum class BoundaryType : char
 {
     open     = 0,
@@ -158,22 +145,6 @@ public:
     HOST_DEVICE_FUN constexpr BoundaryType boundaryY() const { return boundaries[1]; } // NOLINT
     HOST_DEVICE_FUN constexpr BoundaryType boundaryZ() const { return boundaries[2]; } // NOLINT
 
-    //! @brief return the shortest coordinate range in any dimension
-    HOST_DEVICE_FUN constexpr T minExtent() const { return stl::min(stl::min(lengths_[0], lengths_[1]), lengths_[2]); }
-
-    //! @brief return the longes coordinate range in any dimension
-    HOST_DEVICE_FUN constexpr T maxExtent() const { return stl::max(stl::max(lengths_[0], lengths_[1]), lengths_[2]); }
-
-    template<class Archive>
-    void loadOrStore(Archive* ar)
-    {
-        ar->stepAttribute("box", limits, 6);
-        ar->stepAttribute("boundaryType", (char*)boundaries, 3);
-
-        *this = Box<T>(limits[0], limits[1], limits[2], limits[3], limits[4], limits[5], boundaries[0], boundaries[1],
-                       boundaries[2]);
-    }
-
 private:
     HOST_DEVICE_FUN
     friend constexpr bool operator==(const Box<T>& a, const Box<T>& b)
@@ -203,67 +174,6 @@ HOST_DEVICE_FUN inline Vec3<T> applyPbc(Vec3<T> dX, const Box<T>& box)
     dX[2] -= pbcZ * box.lz() * std::rint(dX[2] * box.ilz());
 
     return dX;
-}
-
-//! @brief Fold X into a periodic image that lies inside @a box
-template<class T>
-HOST_DEVICE_FUN inline Vec3<T> putInBox(Vec3<T> X, const Box<T>& box)
-{
-    bool pbcX = (box.boundaryX() == BoundaryType::periodic);
-    bool pbcY = (box.boundaryY() == BoundaryType::periodic);
-    bool pbcZ = (box.boundaryZ() == BoundaryType::periodic);
-
-    // Further testing needed before this can be enabled
-    // X[0] -= pbcX * box.lx() * std::trunc(X[0] * box.ilx());
-    // X[1] -= pbcY * box.ly() * std::trunc(X[1] * box.ily());
-    // X[2] -= pbcZ * box.lz() * std::trunc(X[2] * box.ilz());
-
-    if (pbcX && X[0] > box.xmax()) { X[0] -= box.lx(); }
-    else if (pbcX && X[0] < box.xmin()) { X[0] += box.lx(); }
-
-    if (pbcY && X[1] > box.ymax()) { X[1] -= box.ly(); }
-    else if (pbcY && X[1] < box.ymin()) { X[1] += box.ly(); }
-
-    if (pbcZ && X[2] > box.zmax()) { X[2] -= box.lz(); }
-    else if (pbcZ && X[2] < box.zmin()) { X[2] += box.lz(); }
-
-    return X;
-}
-
-//! @brief Legacy PBC
-template<class T>
-HOST_DEVICE_FUN inline void applyPBC(const cstone::Box<T>& box, T r, T& xx, T& yy, T& zz)
-{
-    bool pbcX = (box.boundaryX() == BoundaryType::periodic);
-    bool pbcY = (box.boundaryY() == BoundaryType::periodic);
-    bool pbcZ = (box.boundaryZ() == BoundaryType::periodic);
-
-    if (pbcX && xx > r)
-        xx -= box.lx();
-    else if (pbcX && xx < -r)
-        xx += box.lx();
-
-    if (pbcY && yy > r)
-        yy -= box.ly();
-    else if (pbcY && yy < -r)
-        yy += box.ly();
-
-    if (pbcZ && zz > r)
-        zz -= box.lz();
-    else if (pbcZ && zz < -r)
-        zz += box.lz();
-}
-
-template<class Tc, class T>
-HOST_DEVICE_FUN inline T distancePBC(const cstone::Box<Tc>& box, T hi, Tc x1, Tc y1, Tc z1, Tc x2, Tc y2, Tc z2)
-{
-    Tc xx = x1 - x2;
-    Tc yy = y1 - y2;
-    Tc zz = z1 - z2;
-
-    applyPBC<Tc>(box, 2.0 * hi, xx, yy, zz);
-
-    return std::sqrt(xx * xx + yy * yy + zz * zz);
 }
 
 /*! @brief stores octree index integer bounds
@@ -320,9 +230,6 @@ private:
 
 using IBox = SimpleBox<int>;
 
-template<class T>
-using FBox = SimpleBox<T>;
-
 /*! @brief calculate floating point 3D center and radius of a and integer box and bounding box pair
  *
  * @tparam T         float or double
@@ -348,34 +255,6 @@ constexpr HOST_DEVICE_FUN util::tuple<Vec3<T>, Vec3<T>> centerAndSize(const IBox
                          (ibox.zmax() - ibox.zmin()) * halfUnitLengthZ};
 
     return {boxCenter, boxSize};
-}
-
-/*! @brief create a floating point box from and integer box
- *
- * @tparam T         float or double
- * @tparam KeyType   32- or 64-bit unsigned integer
- * @param ibox       integer box
- * @param box        global coordinate bounding box
- * @return           the floating point box
- */
-template<class KeyType, class T>
-constexpr HOST_DEVICE_FUN FBox<T> createFpBox(const IBox& ibox, const Box<T>& box)
-{
-    constexpr int maxCoord = 1u << maxTreeLevel<KeyType>{};
-    // smallest octree cell edge length in unit cube
-    constexpr T uL = T(1.) / maxCoord;
-
-    T unitLengthX = uL * box.lx();
-    T unitLengthY = uL * box.ly();
-    T unitLengthZ = uL * box.lz();
-    T xMin        = box.xmin() + ibox.xmin() * unitLengthX;
-    T yMin        = box.ymin() + ibox.ymin() * unitLengthY;
-    T zMin        = box.zmin() + ibox.zmin() * unitLengthZ;
-    T xMax        = box.xmin() + ibox.xmax() * unitLengthX;
-    T yMax        = box.ymin() + ibox.ymax() * unitLengthY;
-    T zMax        = box.zmin() + ibox.zmax() * unitLengthZ;
-
-    return {xMin, xMax, yMin, yMax, zMin, zMax};
 }
 
 } // namespace cstone
