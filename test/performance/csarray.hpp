@@ -51,20 +51,31 @@
 
 #pragma once
 
-#include <algorithm>
-#include <cmath>
 #include <numeric>
 #include <vector>
 #include <tuple>
 
-#include "common.hpp"
-#include "gsl-lite.hpp"
-#include "tuple.hpp"
-
 #include "definitions.h"
+#include "tuple.hpp"
 
 namespace cstone
 {
+
+/*! @brief returns the number of nodes in a tree
+ *
+ * @tparam    Vector  a vector-like container that has a .size() member
+ * @param[in] tree    input tree
+ * @return            the number of nodes
+ *
+ * This makes it explicit that a vector of n Morton codes
+ * corresponds to a tree with n-1 nodes.
+ */
+template<class Vector>
+std::size_t nNodes(const Vector& tree)
+{
+    assert(tree.size());
+    return tree.size() - 1;
+}
 
 //! @brief return first node that starts at or below (contains) key
 template<class KeyType>

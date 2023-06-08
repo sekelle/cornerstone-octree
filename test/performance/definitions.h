@@ -93,30 +93,4 @@ using Vec3 = util::array<T, 3>;
 template<class T>
 using Vec4 = util::array<T, 4>;
 
-enum class P2pTags : int
-{
-    focusTransfer    = 1000,
-    focusPeerCounts  = 2000,
-    focusPeerCenters = 3000,
-    haloRequestKeys  = 4000,
-    domainExchange   = 5000,
-    haloExchange     = 6000
-};
-
-/*! @brief returns the number of nodes in a tree
- *
- * @tparam    Vector  a vector-like container that has a .size() member
- * @param[in] tree    input tree
- * @return            the number of nodes
- *
- * This makes it explicit that a vector of n Morton codes
- * corresponds to a tree with n-1 nodes.
- */
-template<class Vector>
-std::size_t nNodes(const Vector& tree)
-{
-    assert(tree.size());
-    return tree.size() - 1;
-}
-
 } // namespace cstone
