@@ -27,9 +27,6 @@
  * @brief Generic octree traversal methods
  *
  * @author Sebastian Keller <sebastian.f.keller@gmail.com>
- *
- * Single and dual tree traversal methods are the base algorithms for implementing
- * MAC evaluations, collision and surface detection etc.
  */
 
 #pragma once
@@ -39,6 +36,7 @@
 namespace cstone
 {
 
+//! @brief generic depth-first traversal of an octree that works on CPU and GPU with customizable descent criteria
 template<class C, class A>
 HOST_DEVICE_FUN void singleTraversal(const TreeNodeIndex* childOffsets, C&& continuationCriterion, A&& endpointAction)
 {

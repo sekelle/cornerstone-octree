@@ -120,11 +120,11 @@ public:
         sort_by_key(begin(codes_), end(codes_), begin(sfcOrder));
 
         std::vector<T> temp(x_.size());
-        gather<LocalIndex>(sfcOrder, x_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), x_.data(), temp.data());
         swap(x_, temp);
-        gather<LocalIndex>(sfcOrder, y_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), y_.data(), temp.data());
         swap(y_, temp);
-        gather<LocalIndex>(sfcOrder, z_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), z_.data(), temp.data());
         swap(z_, temp);
     }
 
@@ -181,11 +181,11 @@ public:
         sort_by_key(begin(codes_), end(codes_), begin(sfcOrder));
 
         std::vector<T> temp(x_.size());
-        gather<LocalIndex>(sfcOrder, x_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), x_.data(), temp.data());
         swap(x_, temp);
-        gather<LocalIndex>(sfcOrder, y_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), y_.data(), temp.data());
         swap(y_, temp);
-        gather<LocalIndex>(sfcOrder, z_.data(), temp.data());
+        gather(sfcOrder.data(), sfcOrder.size(), z_.data(), temp.data());
         swap(z_, temp);
     }
 
@@ -224,13 +224,13 @@ void adjustSmoothingLength(LocalIndex numParticles,
     sort_by_key(sfcKeys.begin(), sfcKeys.end(), ordering.begin());
 
     std::vector<Tc> temp(x.size());
-    gather<LocalIndex>(ordering, x.data(), temp.data());
+    gather(ordering.data(), ordering.size(), x.data(), temp.data());
     swap(temp, x);
-    gather<LocalIndex>(ordering, y.data(), temp.data());
+    gather(ordering.data(), ordering.size(), y.data(), temp.data());
     swap(temp, y);
-    gather<LocalIndex>(ordering, z.data(), temp.data());
+    gather(ordering.data(), ordering.size(), z.data(), temp.data());
     swap(temp, z);
-    gather<LocalIndex>(ordering, h.data(), temp.data());
+    gather(ordering.data(), ordering.size(), h.data(), temp.data());
     swap(temp, h);
 
     std::vector<LocalIndex> inverseOrdering(numParticles);

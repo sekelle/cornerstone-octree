@@ -72,7 +72,7 @@ void benchmarkGpu()
 {
     using KeyType = typename StrongKeyType::ValueType;
 
-    Box<T> box{0, 1, BoundaryType::periodic};
+    Box<T> box{0, 1, BoundaryType::open};
     int n = 2000000;
 
     RandomCoordinates<T, StrongKeyType> coords(n, box);
@@ -95,7 +95,7 @@ void benchmarkGpu()
     auto [csTree, counts] = computeOctree(codes, codes + n, bucketSize);
     OctreeData<KeyType, CpuTag> octree;
     octree.resize(nNodes(csTree));
-    updateInternalTree<KeyType>(csTree, octree.data());
+    updateInternalTree<KeyType>(csTree.data(), octree.data());
     const TreeNodeIndex* childOffsets = octree.childOffsets.data();
     const TreeNodeIndex* toLeafOrder  = octree.internalToLeaf.data();
 
@@ -161,6 +161,7 @@ void benchmarkGpu()
         findNeighborsKernel<<<iceil(n, 128), 128>>>(rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), 0, n, box,
                                                     nsViewGpu, ngmax, rawPtr(d_neighbors), rawPtr(d_neighborsCount));
 
+        // the fast warp-aware version
         //findNeighborsBT(0, n, rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), nsViewGpu, box,
         //                rawPtr(d_neighborsCount), rawPtr(d_neighbors), ngmax);
     };
@@ -183,6 +184,7 @@ void benchmarkGpu()
         std::vector<cstone::LocalIndex> nilist(neighborsCountGPU[i]);
         for (unsigned j = 0; j < neighborsCountGPU[i]; ++j)
         {
+            // access pattern for the warp-aware version
             //size_t warpOffset = (i / TravConfig::targetSize) * TravConfig::targetSize * ngmax;
             //size_t laneOffset = i % TravConfig::targetSize;
             //nilist[j]         = neighborsGPU[warpOffset + TravConfig::targetSize * j + laneOffset];

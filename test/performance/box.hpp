@@ -42,45 +42,6 @@
 namespace cstone
 {
 
-/*! @brief normalize a spatial length w.r.t. to a min/max range
- *
- * @tparam T
- * @param d
- * @param min
- * @param max
- * @return
- */
-template<class T>
-HOST_DEVICE_FUN constexpr T normalize(T d, T min, T max)
-{
-    return (d - min) / (max - min);
-}
-
-/*! @brief map x into periodic range 0...R-1
- *
- * @tparam R periodic range
- * @param x  input value
- * @return   x mapped into periodic range
- *
- * Examples:
- *   -1 -> R-1
- *    0 -> 0
- *    1 -> 1
- *  R-1 -> R-1
- *    R -> 0
- *  R+1 -> 1
- */
-template<int R>
-HOST_DEVICE_FUN constexpr int pbcAdjust(int x)
-{
-    // this version handles x outside -R, 2R
-    // return x - R * std::floor(double(x)/R);
-    assert(x >= -R);
-    assert(x < 2 * R);
-    int ret = (x < 0) ? x + R : x;
-    return (ret >= R) ? ret - R : ret;
-}
-
 enum class BoundaryType : char
 {
     open     = 0,
@@ -255,18 +216,6 @@ constexpr HOST_DEVICE_FUN util::tuple<Vec3<T>, Vec3<T>> centerAndSize(const IBox
                          (ibox.zmax() - ibox.zmin()) * halfUnitLengthZ};
 
     return {boxCenter, boxSize};
-}
-
-//! @brief returns true if the cuboid defined by center and size is contained within the bounding box
-template<class T>
-HOST_DEVICE_FUN bool insideBox(const Vec3<T>& center, const Vec3<T>& size, const Box<T>& box)
-{
-    Vec3<T> globalMin{box.xmin(), box.ymin(), box.zmin()};
-    Vec3<T> globalMax{box.xmax(), box.ymax(), box.zmax()};
-    Vec3<T> boxMin = center - size;
-    Vec3<T> boxMax = center + size;
-    return boxMin[0] >= globalMin[0] && boxMin[1] >= globalMin[1] && boxMin[2] >= globalMin[2] &&
-           boxMax[0] <= globalMax[0] && boxMax[1] <= globalMax[1] && boxMax[2] <= globalMax[2];
 }
 
 //! @brief returns the smallest distance vector of point X to box b, 0 if X is in b

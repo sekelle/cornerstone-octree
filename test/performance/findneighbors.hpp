@@ -56,31 +56,9 @@ void nodeFpCenters(gsl::span<const KeyType> prefixes, Vec3<T>* centers, Vec3<T>*
     }
 }
 
-/*! @brief compute squared distance, taking PBC into account
- *
- * Note that if pbc{X,Y,Z} is false, the result is identical to distancesq below.
- */
-template<bool Pbc, class T, std::enable_if_t<Pbc, int> = 0>
-HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2, const Box<T>& box)
-{
-    bool pbcX = (box.boundaryX() == BoundaryType::periodic);
-    bool pbcY = (box.boundaryY() == BoundaryType::periodic);
-    bool pbcZ = (box.boundaryZ() == BoundaryType::periodic);
-
-    T dx = x1 - x2;
-    T dy = y1 - y2;
-    T dz = z1 - z2;
-    // this folds d into the periodic range [-l/2, l/2] for each dimension if enabled
-    dx -= pbcX * box.lx() * std::rint(dx * box.ilx());
-    dy -= pbcY * box.ly() * std::rint(dy * box.ily());
-    dz -= pbcZ * box.lz() * std::rint(dz * box.ilz());
-
-    return dx * dx + dy * dy + dz * dz;
-}
-
 //! @brief compute squared distance between to points in 3D
-template<bool Pbc, class T, std::enable_if_t<!Pbc, int> = 0>
-HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2, const Box<T>& /*box*/)
+template<class T>
+HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2)
 {
     T xx = x1 - x2;
     T yy = y1 - y2;
@@ -89,7 +67,7 @@ HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2, const
     return xx * xx + yy * yy + zz * zz;
 }
 
-/*! @brief findNeighbors of particle number @p id within radius
+/*! @brief findNeighbors of particle number @p id within a radius. Works on CPU and GPU.
  *
  * @tparam     T               coordinate type, float or double
  * @tparam     KeyType         32- or 64-bit Morton or Hilbert key type
@@ -124,26 +102,14 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
     Vec3<T> particle{xi, yi, zi};
     unsigned numNeighbors = 0;
 
-    auto pbc    = BoundaryType::periodic;
-    bool anyPbc = box.boundaryX() == pbc || box.boundaryY() == pbc || box.boundaryZ() == pbc;
-    bool usePbc = anyPbc && !insideBox(particle, {T(2) * hi, T(2) * hi, T(2) * hi}, box);
-
-    auto overlapsPbc = [particle, radiusSq, centers = tree.centers, sizes = tree.sizes, &box](TreeNodeIndex idx)
+    auto overlaps = [particle, radiusSq, centers = tree.centers, sizes = tree.sizes, &box](TreeNodeIndex idx)
     {
         auto nodeCenter = centers[idx];
         auto nodeSize   = sizes[idx];
         return norm2(minDistance(particle, nodeCenter, nodeSize, box)) < radiusSq;
     };
 
-    auto overlaps = [particle, radiusSq, centers = tree.centers, sizes = tree.sizes](TreeNodeIndex idx)
-    {
-        auto nodeCenter = centers[idx];
-        auto nodeSize   = sizes[idx];
-        return norm2(minDistance(particle, nodeCenter, nodeSize)) < radiusSq;
-    };
-
-    auto searchBoxPbc =
-        [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors, &box](TreeNodeIndex idx)
+    auto searchBox = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors](TreeNodeIndex idx)
     {
         TreeNodeIndex leafIdx    = tree.internalToLeaf[idx];
         LocalIndex firstParticle = tree.layout[leafIdx];
@@ -152,7 +118,7 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
         for (LocalIndex j = firstParticle; j < lastParticle; ++j)
         {
             if (j == i) { continue; }
-            if (distanceSq<true>(x[j], y[j], z[j], particle[0], particle[1], particle[2], box) < radiusSq)
+            if (distanceSq(x[j], y[j], z[j], particle[0], particle[1], particle[2]) < radiusSq)
             {
                 if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
                 numNeighbors++;
@@ -160,29 +126,12 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
         }
     };
 
-    auto searchBox = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors, &box](TreeNodeIndex idx)
-    {
-        TreeNodeIndex leafIdx    = tree.internalToLeaf[idx];
-        LocalIndex firstParticle = tree.layout[leafIdx];
-        LocalIndex lastParticle  = tree.layout[leafIdx + 1];
-
-        for (LocalIndex j = firstParticle; j < lastParticle; ++j)
-        {
-            if (j == i) { continue; }
-            if (distanceSq<false>(x[j], y[j], z[j], particle[0], particle[1], particle[2], box) < radiusSq)
-            {
-                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
-                numNeighbors++;
-            }
-        }
-    };
-
-    if (usePbc) { singleTraversal(tree.childOffsets, overlapsPbc, searchBoxPbc); }
-    else { singleTraversal(tree.childOffsets, overlaps, searchBox); }
+    singleTraversal(tree.childOffsets, overlaps, searchBox);
 
     return numNeighbors;
 }
 
+//! @brief OpenMP parallel CPU version of neighbor search
 template<class T, class KeyType>
 void findNeighbors(const T* x,
                    const T* y,

@@ -38,7 +38,6 @@
 #include <vector>
 
 #include "definitions.h"
-#include "gsl-lite.hpp"
 
 namespace cstone
 {
@@ -87,38 +86,14 @@ void sort_by_key(InoutIterator inBegin, InoutIterator inEnd, OutputIterator outB
     sort_by_key(inBegin, inEnd, outBegin, std::less<std::decay_t<decltype(*inBegin)>>{});
 }
 
-//! @brief copy with multiple OpenMP threads
-template<class InputIterator, class OutputIterator>
-void omp_copy(InputIterator first, InputIterator last, OutputIterator out)
-{
-    std::size_t n = last - first;
-
-#pragma omp parallel for schedule(static)
-    for (std::size_t i = 0; i < n; ++i)
-    {
-        out[i] = first[i];
-    }
-}
-
 //! @brief gather reorder
 template<class IndexType, class ValueType>
-void gather(gsl::span<const IndexType> ordering, const ValueType* source, ValueType* destination)
+void gather(const IndexType* ordering, std::size_t numElements, const ValueType* source, ValueType* destination)
 {
 #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < ordering.size(); ++i)
+    for (size_t i = 0; i < numElements; ++i)
     {
         destination[i] = source[ordering[i]];
-    }
-}
-
-//! @brief scatter reorder
-template<class IndexType, class ValueType>
-void scatter(gsl::span<const IndexType> ordering, const ValueType* source, ValueType* destination)
-{
-#pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < ordering.size(); ++i)
-    {
-        destination[ordering[i]] = source[i];
     }
 }
 

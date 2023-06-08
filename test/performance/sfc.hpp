@@ -242,32 +242,6 @@ HOST_DEVICE_FUN inline KeyType commonNodePrefix(Vec3<T> center, Vec3<T> size, co
     return KeyType(encodePlaceholderBit(nodeKey.value(), 3 * level));
 }
 
-/*! @brief returns the smallest Hilbert key contained in the shifted box
- *
- * @tparam KeyType  32- or 64-bit unsigned integer
- * @param ibox      cubic integer coordinate box, edge length is a power of 2
- * @param dx        x-shift, in units of the ibox edge length
- * @param dy        y-shift, in units of the ibox edge length
- * @param dz        z-shift, in units of the ibox edge length
- * @return          the smallest key part of ibox shifted by (dx, dy, dz)
- */
-template<class KeyType>
-HOST_DEVICE_FUN inline KeyType sfcNeighbor(const IBox& ibox, unsigned level, int dx, int dy, int dz)
-{
-    constexpr unsigned pbcRange = 1u << maxTreeLevel<KeyType>{};
-
-    unsigned shiftValue = ibox.xmax() - ibox.xmin();
-
-    // lower corner of shifted box
-    int x = pbcAdjust<pbcRange>(ibox.xmin() + dx * shiftValue);
-    int y = pbcAdjust<pbcRange>(ibox.ymin() + dy * shiftValue);
-    int z = pbcAdjust<pbcRange>(ibox.zmin() + dz * shiftValue);
-
-    KeyType key = iSfcKey<KeyType>(x, y, z);
-
-    return KeyType(enclosingBoxCode(key, level));
-}
-
 /*! @brief compute the SFC keys for the input coordinate arrays
  *
  * @tparam     T          float or double

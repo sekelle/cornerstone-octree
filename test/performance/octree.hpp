@@ -49,7 +49,6 @@
 #include "stl.hpp"
 #include "accel_switch.hpp"
 #include "csarray.hpp"
-#include "gsl-lite.hpp"
 
 namespace cstone
 {
@@ -317,11 +316,10 @@ public:
 };
 
 template<class KeyType>
-void updateInternalTree(gsl::span<const KeyType> leaves, OctreeView<KeyType> o)
+void updateInternalTree(const KeyType* leaves, OctreeView<KeyType> o)
 {
-    assert(size_t(o.numLeafNodes) == nNodes(leaves));
-    buildOctreeCpu(leaves.data(), o.numLeafNodes, o.numInternalNodes, o.prefixes, o.childOffsets, o.parents,
-                   o.levelRange, o.internalToLeaf, o.leafToInternal);
+    buildOctreeCpu(leaves, o.numLeafNodes, o.numInternalNodes, o.prefixes, o.childOffsets, o.parents, o.levelRange,
+                   o.internalToLeaf, o.leafToInternal);
 }
 
 } // namespace cstone
