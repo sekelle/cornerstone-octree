@@ -25,7 +25,93 @@
 
 #pragma once
 
+#include <type_traits>
+#include <vector>
+
 #if defined(USE_CUDA) || defined(__CUDACC__)
-#include "cuda_utils.cuh"
+
+#include <thrust/device_vector.h>
+#include <cuda_runtime.h>
+
+#include "errorcheck.cuh"
+
+template<class T, class Alloc>
+T* rawPtr(thrust::device_vector<T, Alloc>& p)
+{
+    return thrust::raw_pointer_cast(p.data());
+}
+
+template<class T, class Alloc>
+const T* rawPtr(const thrust::device_vector<T, Alloc>& p)
+{
+    return thrust::raw_pointer_cast(p.data());
+}
+
+template<class T>
+void memcpyH2D(const T* src, size_t n, T* dest)
+{
+    checkGpuErrors(cudaMemcpy(dest, src, sizeof(T) * n, cudaMemcpyHostToDevice));
+}
+
+template<class T>
+void memcpyD2H(const T* src, size_t n, T* dest)
+{
+    checkGpuErrors(cudaMemcpy(dest, src, sizeof(T) * n, cudaMemcpyDeviceToHost));
+}
+
+template<class T>
+void memcpyD2D(const T* src, size_t n, T* dest)
+{
+    checkGpuErrors(cudaMemcpy(dest, src, sizeof(T) * n, cudaMemcpyDeviceToDevice));
+}
+
 #endif
-#include "cuda_stubs.h"
+
+template<class T, class Alloc>
+T* rawPtr(std::vector<T, Alloc>& p)
+{
+    return p.data();
+}
+
+template<class T, class Alloc>
+const T* rawPtr(const std::vector<T, Alloc>& p)
+{
+    return p.data();
+}
+
+template<class T>
+void memcpyH2D(const T* src, size_t n, T* dest);
+
+template<class T>
+void memcpyD2H(const T* src, size_t n, T* dest);
+
+template<class T>
+void memcpyD2D(const T* src, size_t n, T* dest);
+
+namespace thrust
+{
+
+template<class T>
+class device_allocator;
+
+template<class T, class Alloc>
+class device_vector;
+
+} // namespace thrust
+
+/*! @brief detection trait to determine whether a template parameter is an instance of thrust::device_vector
+ *
+ * @tparam Vector the Vector type to check
+ *
+ * Add specializations for each type of vector that should be recognized as on device
+ */
+template<class Vector>
+struct IsDeviceVector : public std::false_type
+{
+};
+
+//! @brief detection of thrust device vectors
+template<class T, class Alloc>
+struct IsDeviceVector<thrust::device_vector<T, Alloc>> : public std::true_type
+{
+};

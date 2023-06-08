@@ -35,7 +35,7 @@
 
 #include <thrust/device_vector.h>
 
-#include "cuda_utils.cuh"
+#include "cuda_utils.hpp"
 #include "octree.hpp"
 
 #include "findneighbors.hpp"
