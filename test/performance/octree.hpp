@@ -540,7 +540,7 @@ private:
     TreeNodeIndex numLeafNodes_{0};
     TreeNodeIndex numInternalNodes_{0};
 
-    using Alloc = util::DefaultInitAdaptor<TreeNodeIndex>;
+    using Alloc = std::allocator<TreeNodeIndex>;
 
     //! @brief the SFC key and level of each node (Warren-Salmon placeholder-bit), length = numNodes
     std::vector<KeyType> prefixes_;
