@@ -38,7 +38,7 @@
 
 #include "tuple.hpp"
 #include "box.hpp"
-#include "common.hpp"
+#include "bitops.hpp"
 
 namespace cstone
 {

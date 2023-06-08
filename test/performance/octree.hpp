@@ -54,6 +54,13 @@
 namespace cstone
 {
 
+//! @brief return the offset octal digit weight for binary tree <-> octree index correspondence
+HOST_DEVICE_FUN constexpr int digitWeight(int digit)
+{
+    int fourGeqMask = -int(digit >= 4);
+    return ((7 - digit) & fourGeqMask) - (digit & ~fourGeqMask);
+}
+
 /*! @brief map a binary node index to an octree node index
  *
  * @tparam KeyType    32- or 64-bit unsigned integer

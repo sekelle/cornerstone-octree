@@ -36,6 +36,8 @@
 #include "morton.hpp"
 #include "hilbert.hpp"
 
+#include "util.hpp"
+
 namespace cstone
 {
 
