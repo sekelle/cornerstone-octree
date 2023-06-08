@@ -24,41 +24,48 @@
  */
 
 /*! @file
- * @brief Test peer detection performance
+ * @brief Traits classes to manage GPU device acceleration behavior
  *
  * @author Sebastian Keller <sebastian.f.keller@gmail.com>
  */
 
-#include <chrono>
-#include <iostream>
+#pragma once
 
-#include "coord_samples/random.hpp"
-#include "cstone/traversal/peers.hpp"
+#include <type_traits>
 
-using namespace cstone;
-
-int main()
+namespace cstone
 {
-    using KeyType = uint64_t;
-    Box<double> box{-1, 1};
 
-    LocalIndex nParticles = 20000;
-    int bucketSize        = 1;
-    int numRanks          = 50;
+struct CpuTag
+{
+};
+struct GpuTag
+{
+};
 
-    auto codes = makeRandomGaussianKeys<KeyType>(nParticles);
+template<class AccType>
+struct HaveGpu : public std::integral_constant<int, std::is_same_v<AccType, GpuTag>>
+{
+};
 
-    auto [treeLeaves, counts] = computeOctree(codes.data(), codes.data() + nParticles, bucketSize);
-    Octree<KeyType> octree;
-    octree.update(treeLeaves.data(), nNodes(treeLeaves));
+//! @brief The type member of this trait evaluates to CpuCaseType if Accelerator == CpuTag and GpuCaseType otherwise
+template<class Accelerator, template<class...> class CpuCaseType, template<class...> class GpuCaseType, class = void>
+struct AccelSwitchType
+{
+};
 
-    SpaceCurveAssignment assignment = singleRangeSfcSplit(counts, numRanks);
-    int probeRank                   = numRanks / 2;
+template<class Accelerator, template<class...> class CpuCaseType, template<class...> class GpuCaseType>
+struct AccelSwitchType<Accelerator, CpuCaseType, GpuCaseType, std::enable_if_t<!HaveGpu<Accelerator>{}>>
+{
+    template<class... Args>
+    using type = CpuCaseType<Args...>;
+};
 
-    auto tp0                  = std::chrono::high_resolution_clock::now();
-    std::vector<int> peersDtt = findPeersMac(probeRank, assignment, octree, box, invThetaMinMac(0.5f));
-    auto tp1                  = std::chrono::high_resolution_clock::now();
+template<class Accelerator, template<class...> class CpuCaseType, template<class...> class GpuCaseType>
+struct AccelSwitchType<Accelerator, CpuCaseType, GpuCaseType, std::enable_if_t<HaveGpu<Accelerator>{}>>
+{
+    template<class... Args>
+    using type = GpuCaseType<Args...>;
+};
 
-    double t2 = std::chrono::duration<double>(tp1 - tp0).count();
-    std::cout << "find peers: " << t2 << " numPeers: " << peersDtt.size() << std::endl;
-}
+} // namespace cstone

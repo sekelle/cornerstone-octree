@@ -35,12 +35,14 @@
 
 #include <thrust/device_vector.h>
 
-#include "cstone/cuda/cuda_utils.cuh"
-#include "cstone/findneighbors.hpp"
+#include "cuda_utils.cuh"
+#include "octree.hpp"
 
-#include "cstone/traversal/find_neighbors.cuh"
+#include "findneighbors.hpp"
 
-#include "../coord_samples/random.hpp"
+//#include "cstone/traversal/find_neighbors.cuh"
+
+#include "random.hpp"
 #include "timing.cuh"
 
 using namespace cstone;
@@ -62,7 +64,7 @@ __global__ void findNeighborsKernel(const T* x,
     cstone::LocalIndex id  = firstId + tid;
     if (id >= lastId) { return; }
 
-    findNeighbors(id, x, y, z, h, treeView, box, ngmax, neighbors + tid * ngmax, neighborsCount + id);
+    neighborsCount[id] = findNeighbors(id, x, y, z, h, treeView, box, ngmax, neighbors + tid * ngmax);
 }
 
 template<class T, class StrongKeyType>
@@ -156,11 +158,11 @@ void benchmarkGpu()
 
     auto findNeighborsLambda = [&]()
     {
-        // findNeighborsKernel<<<iceil(n, 128), 128>>>(rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), 0, n, box,
-        //                                             nsViewGpu, ngmax, rawPtr(d_neighbors), rawPtr(d_neighborsCount));
+        findNeighborsKernel<<<iceil(n, 128), 128>>>(rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), 0, n, box,
+                                                    nsViewGpu, ngmax, rawPtr(d_neighbors), rawPtr(d_neighborsCount));
 
-        findNeighborsBT(0, n, rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), nsViewGpu, box,
-                        rawPtr(d_neighborsCount), rawPtr(d_neighbors), ngmax);
+        //findNeighborsBT(0, n, rawPtr(d_x), rawPtr(d_y), rawPtr(d_z), rawPtr(d_h), nsViewGpu, box,
+        //                rawPtr(d_neighborsCount), rawPtr(d_neighbors), ngmax);
     };
 
     float gpuTime = timeGpu(findNeighborsLambda);
@@ -181,12 +183,12 @@ void benchmarkGpu()
         std::vector<cstone::LocalIndex> nilist(neighborsCountGPU[i]);
         for (unsigned j = 0; j < neighborsCountGPU[i]; ++j)
         {
-            size_t warpOffset = (i / TravConfig::targetSize) * TravConfig::targetSize * ngmax;
-            size_t laneOffset = i % TravConfig::targetSize;
-            nilist[j]         = neighborsGPU[warpOffset + TravConfig::targetSize * j + laneOffset];
-            nilist[j]         = neighborsGPU[warpOffset + TravConfig::targetSize * j + laneOffset];
+            //size_t warpOffset = (i / TravConfig::targetSize) * TravConfig::targetSize * ngmax;
+            //size_t laneOffset = i % TravConfig::targetSize;
+            //nilist[j]         = neighborsGPU[warpOffset + TravConfig::targetSize * j + laneOffset];
+            //nilist[j]         = neighborsGPU[warpOffset + TravConfig::targetSize * j + laneOffset];
 
-            // nilist[j] = neighborsGPU[i * ngmax + j];
+            nilist[j] = neighborsGPU[i * ngmax + j];
         }
         std::sort(nilist.begin(), nilist.end());
 
