@@ -34,7 +34,7 @@
 #include <cmath>
 
 #include "gsl-lite.hpp"
-#include "boxoverlap.hpp"
+#include "box.hpp"
 #include "definitions.h"
 #include "traversal.hpp"
 
