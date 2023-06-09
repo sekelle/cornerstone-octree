@@ -49,13 +49,7 @@ enum class BoundaryType : char
     fixed    = 2
 };
 
-/*! @brief stores the coordinate bounds
- *
- * Needs a slightly different behavior in the PBC case than the existing BBox
- * to manage morton code based octrees.
- *
- * @tparam T floating point type
- */
+//! @brief stores the coordinate bounds
 template<class T>
 class Box
 {
@@ -266,15 +260,6 @@ HOST_DEVICE_FUN Vec3<T> minDistance(
     dX *= T(0.5);
 
     return dX;
-}
-
-//! @brief Convenience wrapper to minDistance. This should only be used for testing.
-template<class KeyType, class T>
-HOST_DEVICE_FUN T minDistanceSq(IBox a, IBox b, const Box<T>& box)
-{
-    auto [aCenter, aSize] = centerAndSize<KeyType>(a, box);
-    auto [bCenter, bSize] = centerAndSize<KeyType>(b, box);
-    return norm2(minDistance(aCenter, aSize, bCenter, bSize, box));
 }
 
 } // namespace cstone

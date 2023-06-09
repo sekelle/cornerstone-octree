@@ -322,4 +322,19 @@ void updateInternalTree(const KeyType* leaves, OctreeView<KeyType> o)
                    o.internalToLeaf, o.leafToInternal);
 }
 
+//! @brief compute geometric node centers based on node SFC keys and the global bounding box
+template<class KeyType, class T>
+void nodeFpCenters(const KeyType* prefixes, TreeNodeIndex numNodes, Vec3<T>* centers, Vec3<T>* sizes, const Box<T>& box)
+{
+#pragma omp parallel for schedule(static)
+    for (size_t i = 0; i < numNodes; ++i)
+    {
+        KeyType prefix                  = prefixes[i];
+        KeyType startKey                = decodePlaceholderBit(prefix);
+        unsigned level                  = decodePrefixLength(prefix) / 3;
+        auto nodeBox                    = sfcIBox(sfcKey(startKey), level);
+        util::tie(centers[i], sizes[i]) = centerAndSize<KeyType>(nodeBox, box);
+    }
+}
+
 } // namespace cstone

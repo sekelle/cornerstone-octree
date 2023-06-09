@@ -35,35 +35,55 @@
 
 #include "box.hpp"
 #include "definitions.h"
-#include "traversal.hpp"
 
 namespace cstone
 {
 
-//! @brief compute geometric node centers based on node SFC keys and the global bounding box
-template<class KeyType, class T>
-void nodeFpCenters(const KeyType* prefixes, TreeNodeIndex numNodes, Vec3<T>* centers, Vec3<T>* sizes, const Box<T>& box)
+//! @brief generic depth-first traversal of an octree that works on CPU and GPU with customizable descent criteria
+template<class C, class A>
+HOST_DEVICE_FUN void
+depthFirstTraversal(const TreeNodeIndex* childOffsets, C&& continuationCriterion, A&& endpointAction)
 {
-#pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < numNodes; ++i)
+    bool descend = continuationCriterion(0);
+    if (!descend) return;
+
+    if (childOffsets[0] == 0)
     {
-        KeyType prefix                  = prefixes[i];
-        KeyType startKey                = decodePlaceholderBit(prefix);
-        unsigned level                  = decodePrefixLength(prefix) / 3;
-        auto nodeBox                    = sfcIBox(sfcKey(startKey), level);
-        util::tie(centers[i], sizes[i]) = centerAndSize<KeyType>(nodeBox, box);
+        // root node is already the endpoint
+        endpointAction(0);
+        return;
     }
-}
 
-//! @brief compute squared distance between to points in 3D
-template<class T>
-HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2)
-{
-    T xx = x1 - x2;
-    T yy = y1 - y2;
-    T zz = z1 - z2;
+    constexpr int maxStackDepth = 64;
+    TreeNodeIndex stack[maxStackDepth];
+    stack[0] = 0;
 
-    return xx * xx + yy * yy + zz * zz;
+    TreeNodeIndex stackPos = 1;
+    TreeNodeIndex node     = 0; // start at the root
+
+    do
+    {
+        for (int octant = 0; octant < 8; ++octant)
+        {
+            TreeNodeIndex child = childOffsets[node] + octant;
+            bool descend        = continuationCriterion(child);
+            if (descend)
+            {
+                if (childOffsets[child] == 0)
+                {
+                    // endpoint reached with child is a leaf node
+                    endpointAction(child);
+                }
+                else
+                {
+                    assert(stackPos < maxStackDepth);
+                    stack[stackPos++] = child; // push
+                }
+            }
+        }
+        node = stack[--stackPos];
+
+    } while (node != 0); // the root can only be obtained when the tree has been fully traversed
 }
 
 /*! @brief findNeighbors of particle number @p id within a radius. Works on CPU and GPU.
@@ -92,23 +112,19 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
                                        unsigned ngmax,
                                        LocalIndex* neighbors)
 {
-    T xi = x[i];
-    T yi = y[i];
-    T zi = z[i];
-    T hi = h[i];
-
-    T radiusSq = 4.0 * hi * hi;
-    Vec3<T> particle{xi, yi, zi};
+    Vec3<T> target{x[i], y[i], z[i]};
+    T hi                  = h[i];
+    T radiusSq            = 4.0 * hi * hi;
     unsigned numNeighbors = 0;
 
-    auto overlaps = [particle, radiusSq, centers = tree.centers, sizes = tree.sizes, &box](TreeNodeIndex idx)
+    auto overlaps = [target, radiusSq, centers = tree.centers, sizes = tree.sizes, &box](TreeNodeIndex idx)
     {
         auto nodeCenter = centers[idx];
         auto nodeSize   = sizes[idx];
-        return norm2(minDistance(particle, nodeCenter, nodeSize, box)) < radiusSq;
+        return norm2(minDistance(target, nodeCenter, nodeSize, box)) < radiusSq;
     };
 
-    auto searchBox = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors](TreeNodeIndex idx)
+    auto searchBox = [i, target, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors](TreeNodeIndex idx)
     {
         TreeNodeIndex leafIdx    = tree.internalToLeaf[idx];
         LocalIndex firstParticle = tree.layout[leafIdx];
@@ -117,7 +133,7 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
         for (LocalIndex j = firstParticle; j < lastParticle; ++j)
         {
             if (j == i) { continue; }
-            if (distanceSq(x[j], y[j], z[j], particle[0], particle[1], particle[2]) < radiusSq)
+            if (norm2(Vec3<T>{x[j], y[j], z[j]} - target) < radiusSq)
             {
                 if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
                 numNeighbors++;
@@ -125,7 +141,7 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
         }
     };
 
-    singleTraversal(tree.childOffsets, overlaps, searchBox);
+    depthFirstTraversal(tree.childOffsets, overlaps, searchBox);
 
     return numNeighbors;
 }
