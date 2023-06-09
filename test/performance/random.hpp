@@ -39,7 +39,6 @@
 #include "gather.hpp"
 #include "sfc.hpp"
 #include "definitions.h"
-#include "gsl-lite.hpp"
 
 namespace cstone
 {
@@ -250,9 +249,8 @@ void adjustSmoothingLength(LocalIndex numParticles,
     std::vector<LocalIndex> layout(nNodes(csTree) + 1);
     std::exclusive_scan(counts.begin(), counts.end() + 1, layout.begin(), 0);
 
-    gsl::span<const KeyType> nodeKeys(octree.prefixes.data(), octree.numNodes);
     std::vector<Vec3<Tc>> centers(octree.numNodes), sizes(octree.numNodes);
-    nodeFpCenters<KeyType>(nodeKeys, centers.data(), sizes.data(), box);
+    nodeFpCenters<KeyType>(octree.prefixes.data(), octree.numNodes, centers.data(), sizes.data(), box);
 
     OctreeNsView<Tc, KeyType> nsView{octree.prefixes.data(),
                                      octree.childOffsets.data(),

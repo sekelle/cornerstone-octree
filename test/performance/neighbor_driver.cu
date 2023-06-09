@@ -39,7 +39,6 @@
 #include "octree.hpp"
 
 #include "findneighbors.hpp"
-
 //#include "cstone/traversal/find_neighbors.cuh"
 
 #include "random.hpp"
@@ -103,8 +102,7 @@ void benchmarkGpu()
     std::exclusive_scan(counts.begin(), counts.end() + 1, layout.begin(), 0);
 
     std::vector<Vec3<T>> centers(octree.numNodes), sizes(octree.numNodes);
-    gsl::span<const KeyType> nodeKeys(octree.prefixes.data(), octree.numNodes);
-    nodeFpCenters<KeyType>(nodeKeys, centers.data(), sizes.data(), box);
+    nodeFpCenters(octree.prefixes.data(), octree.numNodes, centers.data(), sizes.data(), box);
 
     OctreeNsView<T, KeyType> nsView{octree.prefixes.data(),
                                     octree.childOffsets.data(),

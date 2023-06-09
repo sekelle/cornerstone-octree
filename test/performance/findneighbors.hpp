@@ -33,7 +33,6 @@
 
 #include <cmath>
 
-#include "gsl-lite.hpp"
 #include "box.hpp"
 #include "definitions.h"
 #include "traversal.hpp"
@@ -43,10 +42,10 @@ namespace cstone
 
 //! @brief compute geometric node centers based on node SFC keys and the global bounding box
 template<class KeyType, class T>
-void nodeFpCenters(gsl::span<const KeyType> prefixes, Vec3<T>* centers, Vec3<T>* sizes, const Box<T>& box)
+void nodeFpCenters(const KeyType* prefixes, TreeNodeIndex numNodes, Vec3<T>* centers, Vec3<T>* sizes, const Box<T>& box)
 {
 #pragma omp parallel for schedule(static)
-    for (size_t i = 0; i < prefixes.size(); ++i)
+    for (size_t i = 0; i < numNodes; ++i)
     {
         KeyType prefix                  = prefixes[i];
         KeyType startKey                = decodePlaceholderBit(prefix);
