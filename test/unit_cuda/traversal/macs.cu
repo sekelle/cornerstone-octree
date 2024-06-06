@@ -48,7 +48,7 @@ TEST(Macs, limitSource4x4_matchCPU)
 
     thrust::fill(macs.begin(), macs.end(), 0);
     markMacsGpu(ov.prefixes, ov.childOffsets, rawPtr(centers), box, rawPtr(leaves) + 0, 32, false, rawPtr(macs));
-    h_macs = macs;
+    h_macs      = macs;
     int numMacs = std::accumulate(h_macs.begin(), h_macs.end(), 0);
     EXPECT_EQ(numMacs, 5 + 16);
 }
