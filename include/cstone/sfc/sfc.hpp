@@ -35,6 +35,7 @@
 
 #include "cstone/util/strong_type.hpp"
 
+#include <format>
 #include "morton.hpp"
 #include "hilbert.hpp"
 
@@ -384,11 +385,37 @@ void computeSfcKeys(const T* x, const T* y, const T* z, KeyType* particleKeys, s
 template<class T, class KeyType>
 void computeSfc1D3DKeys(const T* x, const T* y, const T* z, KeyType* particleKeys, size_t n, const Box<T>& box)
 {
+    int level_1D = 1;
+
+    // Divide the box into 4^level_1D sub-boxes
+    const int x_axis_length         = box.lx();
+    const std::size_t x_axis_blocks = 1 << (2 * level_1D);
+    const int x_axis_block_length   = x_axis_length / x_axis_blocks;
+    T x_axis_start                  = box.xmin();
+    T x_axis_end                    = x_axis_start + x_axis_block_length;
+    std::vector<Box<T>> sub_boxes;
+    sub_boxes.reserve(x_axis_blocks);
+
+#pragma omp parallel for schedule(static)
+    for (std::size_t i = 0; i < x_axis_blocks; ++i)
+    {
+        sub_boxes.push_back(Box<T>{x_axis_start, x_axis_end, box.ymin(), box.ymax(), box.zmin(), box.zmax()});
+        std::cout << "Sub box " << i << ":\t" << sub_boxes[i].xmin() << "\t" << sub_boxes[i].xmax() << std::endl;
+        x_axis_start = x_axis_end;
+        x_axis_end   = x_axis_start + x_axis_block_length;
+    }
 
 #pragma omp parallel for schedule(static)
     for (std::size_t i = 0; i < n; ++i)
     {
-        particleKeys[i] = sfc1D3D<KeyType>(x[i], y[i], z[i], box, 1);
+        const int sub_box_id = x[i] / x_axis_block_length;
+        std::cout << "Coord:\t" << x[i] << "\t" << y[i] << "\t" << z[i] << "\tSub box id:\t" << sub_box_id << std::endl;
+        const auto sfc1D3Dkey = sfc1D3D<KeyType>(x[i], y[i], z[i], sub_boxes[sub_box_id], level_1D);
+        std::cout << "maxTreeLevel: " << maxTreeLevel<typename KeyType::ValueType>{} << std::endl;
+        const auto sub_box_key = (sub_box_id << ((maxTreeLevel<typename KeyType::ValueType>{} - level_1D) * 3));
+        std::cout << "Sfc1D3D key: " << sfc1D3Dkey << std::endl;
+        std::cout << "Sub box key: " << std::format("{:b}", sub_box_key) << std::endl;
+        particleKeys[i] = sfc1D3Dkey | sub_box_key;
     }
 }
 
