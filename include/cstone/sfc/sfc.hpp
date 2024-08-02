@@ -192,10 +192,10 @@ HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert<KeyType>{}, KeyType> iSfcKey(u
 //! @brief Key encode overload for Mixed Hilbert keys
 template<class KeyType>
 HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert1DMixed<KeyType>{}, KeyType>
-iSfcKey(unsigned ix, unsigned iy, unsigned iz, int level)
+iSfcKey(unsigned ix, unsigned iy, unsigned iz, int level, int long_dimension)
 {
     std::cout << "My iSfcKey" << std::endl;
-    return KeyType{iHilbert1DMixed<typename KeyType::ValueType>(ix, iy, iz, level)};
+    return KeyType{iHilbert1DMixed<typename KeyType::ValueType>(ix, iy, iz, level, long_dimension)};
 }
 
 template<class KeyType, class T>
@@ -235,7 +235,7 @@ HOST_DEVICE_FUN inline KeyType sfc1D3D(T x, T y, T z, T xmin, T ymin, T zmin, T 
     assert(iy >= 0);
     assert(iz >= 0);
 
-    return iSfcKey<KeyType>(ix, iy, iz, level_1D);
+    return iSfcKey<KeyType>(ix, iy, iz, level_1D, 0);
 }
 
 /*! @brief Calculates a Hilbert key for a 3D point within the specified box
@@ -389,41 +389,46 @@ void computeSfc1D3DKeys(const T* x, const T* y, const T* z, KeyType* particleKey
 {
     int level_1D = 2;
 
-    // Divide the box into 4^level_1D sub-boxes
-    const int x_axis_length         = box.lx();
-    const std::size_t x_axis_blocks = 1 << (2 * level_1D);
-    const int x_axis_block_length   = x_axis_length / x_axis_blocks;
-    T x_axis_start                  = box.xmin();
-    T x_axis_end                    = x_axis_start + x_axis_block_length;
-    std::vector<Box<T>> sub_boxes;
-    sub_boxes.reserve(x_axis_blocks);
+//     // Divide the box into 4^level_1D sub-boxes
+//     const int x_axis_length         = box.lx();
+//     const std::size_t x_axis_blocks = 1 << (2 * level_1D);
+//     const int x_axis_block_length   = x_axis_length / x_axis_blocks;
+//     T x_axis_start                  = box.xmin();
+//     T x_axis_end                    = x_axis_start + x_axis_block_length;
+//     std::vector<Box<T>> sub_boxes;
+//     sub_boxes.reserve(x_axis_blocks);
 
-    for (std::size_t i = 0; i < x_axis_blocks; ++i)
-    {
-        sub_boxes.push_back(Box<T>{x_axis_start, x_axis_end, box.ymin(), box.ymax(), box.zmin(), box.zmax()});
-        std::cout << "Sub box " << i << ":\t" << sub_boxes[i].xmin() << "\t" << sub_boxes[i].xmax() << std::endl;
-        x_axis_start = x_axis_end;
-        x_axis_end   = x_axis_start + x_axis_block_length;
-    }
+//     for (std::size_t i = 0; i < x_axis_blocks; ++i)
+//     {
+//         sub_boxes.push_back(Box<T>{x_axis_start, x_axis_end, box.ymin(), box.ymax(), box.zmin(), box.zmax()});
+//         std::cout << "Sub box " << i << ":\t" << sub_boxes[i].xmin() << "\t" << sub_boxes[i].xmax() << std::endl;
+//         x_axis_start = x_axis_end;
+//         x_axis_end   = x_axis_start + x_axis_block_length;
+//     }
 
+// #pragma omp parallel for schedule(static)
+//     for (std::size_t i = 0; i < n; ++i)
+//     {
+//         const int sub_box_id = x[i] / x_axis_block_length;
+//         std::cout << "Coord:\t" << x[i] << "\t" << y[i] << "\t" << z[i] << "\tSub box id:\t" << sub_box_id <<
+//         std::endl; const auto sfc1D3Dkey = sfc1D3D<KeyType>(x[i], y[i], z[i], sub_boxes[sub_box_id], level_1D);
+//         std::cout << "maxTreeLevel: " << maxTreeLevel<typename KeyType::ValueType>{} << std::endl;
+//         std::cout << "Sub box id: " << std::format("{:b}", sub_box_id) << std::endl;
+//         size_t sub_box_key = 0;
+//         for (int i = level_1D - 1; i >= 0; --i)
+//         {
+//             sub_box_key |= ((sub_box_id >> (2 * i)) & 3) << (3 * i);
+//         }
+//         std::cout << "Sub box key before shift: " << std::format("{:b}", sub_box_key) << std::endl;
+//         sub_box_key = (sub_box_key << ((maxTreeLevel<typename KeyType::ValueType>{} - level_1D) * 3));
+//         std::cout << "Sfc1D3D key: " << sfc1D3Dkey << std::endl;
+//         std::cout << "Sub box key: " << std::format("{:b}", sub_box_key) << std::endl;
+//         particleKeys[i] = sfc1D3Dkey | sub_box_key;
+//     }
 #pragma omp parallel for schedule(static)
     for (std::size_t i = 0; i < n; ++i)
     {
-        const int sub_box_id = x[i] / x_axis_block_length;
-        std::cout << "Coord:\t" << x[i] << "\t" << y[i] << "\t" << z[i] << "\tSub box id:\t" << sub_box_id << std::endl;
-        const auto sfc1D3Dkey = sfc1D3D<KeyType>(x[i], y[i], z[i], sub_boxes[sub_box_id], level_1D);
-        std::cout << "maxTreeLevel: " << maxTreeLevel<typename KeyType::ValueType>{} << std::endl;
-        std::cout << "Sub box id: " << std::format("{:b}", sub_box_id) << std::endl;
-        size_t sub_box_key = 0;
-        for (int i = level_1D - 1; i >= 0; --i)
-        {
-            sub_box_key |= ((sub_box_id >> (2 * i)) & 3) << (3 * i);
-        }
-        std::cout << "Sub box key before shift: " << std::format("{:b}", sub_box_key) << std::endl;
-        sub_box_key = (sub_box_key << ((maxTreeLevel<typename KeyType::ValueType>{} - level_1D) * 3));
-        std::cout << "Sfc1D3D key: " << sfc1D3Dkey << std::endl;
-        std::cout << "Sub box key: " << std::format("{:b}", sub_box_key) << std::endl;
-        particleKeys[i] = sfc1D3Dkey | sub_box_key;
+        particleKeys[i] = sfc1D3D<KeyType>(x[i], y[i], z[i], box, level_1D);
     }
 }
 
