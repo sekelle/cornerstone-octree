@@ -121,6 +121,7 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
     assert(pz < (1u << maxTreeLevel<KeyType>{}));
+    assert(level_1D < maxTreeLevel<KeyType>{});
 
 #if !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
     constexpr unsigned mortonToHilbert[8] = {0, 1, 3, 2, 7, 6, 4, 5};
