@@ -108,6 +108,9 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
     return key;
 }
 
+template<class KeyType>
+inline KeyType calculate2Dkey(unsigned px, unsigned py, int level) noexcept;
+
 /*! @brief compute the Hilbert key for a 3D point of integer coordinates
  *
  * @tparam     KeyType   32- or 64-bit unsigned integer
@@ -116,12 +119,29 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
+iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_dimension) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
     assert(pz < (1u << maxTreeLevel<KeyType>{}));
     assert(level_1D < maxTreeLevel<KeyType>{});
+
+    unsigned px_2D, py_2D;
+    if (long_dimension == 0)
+    {
+        px_2D = py;
+        py_2D = pz;
+    }
+    else if (long_dimension == 1)
+    {
+        px_2D = px;
+        py_2D = pz;
+    }
+    else
+    {
+        px_2D = px;
+        py_2D = py;
+    }
 
 #if !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
     constexpr unsigned mortonToHilbert[8] = {0, 1, 3, 2, 7, 6, 4, 5};
@@ -129,7 +149,14 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
 
     KeyType key = 0;
 
-    for (int level = maxTreeLevel<KeyType>{} - 1 - level_1D; level >= 0; --level)
+    for (int level = level_1D - 1; level >= 0; --level)
+    {
+        key = (key << 3) + calculate2Dkey<KeyType>(px_2D, py_2D, level);
+    }
+
+    std::cout << "1D levels: " << level_1D << " 2D hilbert key: " << std::bitset<6>(key) << std::endl;
+
+    for (int level = maxTreeLevel<KeyType>{} - 1; level >= level_1D; --level)
     {
         unsigned xi = (px >> level) & 1u;
         unsigned yi = (py >> level) & 1u;
