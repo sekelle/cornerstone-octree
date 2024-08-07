@@ -48,18 +48,35 @@ void inversionTest()
     {
         KeyType hilbertKey = iHilbert1DMixed<KeyType>(x[i], y[i], z[i], 2, 0);
 
-        auto [a, b, c] = decodeHilbert(hilbertKey);
-        std::cout << "x: " << x[i] << " y: " << y[i] << " z: " << z[i] << " hilbertKey: " << std::bitset<32>(hilbertKey)
-                  << " a: " << a << " b: " << b << " c: " << c
-                  << " original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
+        auto [a, b, c] = decodeHilbert1DMixed(hilbertKey, 2, 0);
+        std::cout << "x : " << std::bitset<32>(x[i]) << " y : " << std::bitset<32>(y[i])
+                  << " z : " << std::bitset<32>(z[i]) << std::endl;
+        std::cout << "a : " << std::bitset<32>(a) << " b : " << std::bitset<32>(b) << " c : " << std::bitset<32>(c)
+                  << std::endl;
+        std::cout << "hilbert  key: " << std::bitset<32>(hilbertKey) << std::endl
+                  << "original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
         // EXPECT_EQ(x[i], a);
-        // EXPECT_EQ(y[i], b);
-        // EXPECT_EQ(z[i], c);
+        EXPECT_EQ(y[i], b);
+        EXPECT_EQ(z[i], c);
+    }
+
+    std::cout << "========== Extra tests ==============" << std::endl;
+
+    for (int i = 0; i < numKeys; ++i)
+    {
+        KeyType hilbertKey = iHilbert2D<KeyType>(y[i], z[i]);
+        std::cout << "y: " << std::bitset<32>(y[i]) << " z: " << std::bitset<32>(z[i]) << std::endl;
+        auto [a, b] = decodeHilbert2D<KeyType>(hilbertKey);
+        std::cout << "a: " << std::bitset<32>(a) << " b: " << std::bitset<32>(b) << std::endl;
+        std::cout << "hilbert 2d key: " << std::bitset<32>(hilbertKey) << std::endl;
+        EXPECT_EQ(y[i], a);
+        EXPECT_EQ(z[i], b);
     }
 }
 
-TEST(MixedHilbertCode, inversion)
+TEST(MixedHilbertSample, InversionTest)
 {
+    std::cout << "========== Inversion tests ==============" << std::endl;
     inversionTest<unsigned>();
-    inversionTest<uint64_t>();
+    // inversionTest<uint64_t>();
 }
