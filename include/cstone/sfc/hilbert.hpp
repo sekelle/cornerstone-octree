@@ -109,7 +109,10 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
 }
 
 template<class KeyType>
-inline KeyType calculate2Dkey(unsigned px, unsigned py, int level) noexcept;
+HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType> iHilbert2D(unsigned px, unsigned py) noexcept;
+
+template<class KeyType>
+inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept;
 
 /*! @brief compute the Hilbert key for a 3D point of integer coordinates
  *
@@ -129,8 +132,8 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
     unsigned px_2D, py_2D;
     if (long_dimension == 0)
     {
-        px_2D = py;
-        py_2D = pz;
+        px_2D = py >> (maxTreeLevel<KeyType>{} - level_1D);
+        py_2D = pz >> (maxTreeLevel<KeyType>{} - level_1D);
     }
     else if (long_dimension == 1)
     {
@@ -149,14 +152,23 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
 
     KeyType key = 0;
 
-    for (int level = level_1D - 1; level >= 0; --level)
+    // for (int level = level_1D - 1; level >= 0; --level)
+    // {
+    //     const auto key_2d = calculate2Dkey<KeyType>(px_2D, py_2D, level);
+    //     std::cout << "2D hilbert key for " << level << " level: " << std::bitset<6>(key_2d) << std::endl;
+    //     key = (key << 3) + key_2d;
+    // }
+    auto key_2d = iHilbert2D<KeyType>(px_2D, py_2D);
+    std::cout << "original 2D key: " << std::bitset<20>(key_2d) << std::endl;
+    for (int level{level_1D - 1}; level >= 0; --level)
     {
-        key = (key << 3) + calculate2Dkey<KeyType>(px_2D, py_2D, level);
+        key = (key << 3) + ((key_2d >> (2 * level)) & 3);
+        std::cout << "level: " << level << " key: " << std::bitset<2>(((key_2d >> (2 * level)) & 3)) << std::endl;
     }
-
-    std::cout << "1D levels: " << level_1D << " 2D hilbert key: " << std::bitset<6>(key) << std::endl;
-
-    for (int level = maxTreeLevel<KeyType>{} - 1; level >= level_1D; --level)
+    key_2d = key;
+    std::cout << "filtered 2D key: " << std::bitset<32>(key_2d) << std::endl;
+    key = 0;
+    for (int level = maxTreeLevel<KeyType>{} - level_1D - 1; level >= 0; --level)
     {
         unsigned xi = (px >> level) & 1u;
         unsigned yi = (py >> level) & 1u;
@@ -191,12 +203,23 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
             pz          = pt;
         }
     }
-
+    unsigned mask{};
+    for (int level{0}; level < maxTreeLevel<KeyType>{} - level_1D; ++level)
+    {
+        mask = (mask << 3) | 7;
+    }
+    std::cout << "3d key:         " << std::bitset<32>(key) << std::endl;
+    std::cout << "mask:           " << std::bitset<32>(mask) << std::endl;
+    // key = (key & mask) | ;
+    const auto key_2d_shifted = key_2d << (3 * (maxTreeLevel<KeyType>{} - level_1D));
+    std::cout << "2d key shifted: " << std::bitset<32>(key_2d_shifted) << std::endl;
+    key = key_2d_shifted | (key & mask);
+    std::cout << "final key:      " << std::bitset<32>(key) << std::endl;
     return key;
 }
 
 template<class KeyType>
-inline KeyType calculate2Dkey(unsigned px, unsigned py, int level) noexcept
+inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept
 {
     KeyType temp, key;
     unsigned xi, yi;
@@ -280,13 +303,95 @@ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned> decodeHilbert(K
     return {px, py, pz};
 }
 
+template<class KeyType>
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned>
+decodeHilbert2D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept;
+
+//! @brief inverse function of iHilbert
+template<class KeyType>
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
+decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
+{
+    unsigned px = 0;
+    unsigned py = 0;
+    unsigned pz = 0;
+
+    for (unsigned level = 0; level < maxTreeLevel<KeyType>{} - level_1D; ++level)
+    {
+        unsigned octant = (key >> (3 * level)) & 7u;
+        std::cout << "level: " << level << " octant: " << std::bitset<3>(octant) << std::endl;
+        const unsigned xi = octant >> 2u;
+        const unsigned yi = (octant >> 1u) & 1u;
+        const unsigned zi = octant & 1u;
+
+        if (yi ^ zi)
+        {
+            // cyclic rotation
+            unsigned pt = px;
+            px          = pz;
+            pz          = py;
+            py          = pt;
+        }
+        else if ((!xi & !yi & !zi) || (xi & yi & zi))
+        {
+            // swap x and z
+            unsigned pt = px;
+            px          = pz;
+            pz          = pt;
+        }
+
+        // turn px, py and pz
+        unsigned mask = (1 << level) - 1;
+        px ^= mask & (-(xi & (yi | zi)));
+        py ^= mask & (-((xi & ((!yi) | (!zi))) | ((!xi) & yi & zi)));
+        pz ^= mask & (-((xi & (!yi) & (!zi)) | (yi & zi)));
+
+        // append 1 bit to the positions
+        px |= (xi << level);
+        py |= ((xi ^ yi) << level);
+        pz |= ((yi ^ zi) << level);
+    }
+    std::cout << "px: " << std::bitset<32>(px) << " py: " << std::bitset<32>(py) << " pz: " << std::bitset<32>(pz)
+              << std::endl;
+
+    unsigned masked_2D_key{};
+
+    for (int level{level_1D - 1}; level >= 0; --level)
+    {
+        masked_2D_key = (masked_2D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - level_1D + level))) & 3);
+    }
+
+    std::cout << "masked 2D key: " << std::bitset<32>(masked_2D_key) << std::endl;
+
+    auto xy_2d     = decodeHilbert2D<KeyType>(masked_2D_key);
+    unsigned px_2D = get<0>(xy_2d) & 3;
+    unsigned py_2D = get<1>(xy_2d) & 3;
+
+    if (long_dimension == 0)
+    {
+        py = py | (px_2D << (maxTreeLevel<KeyType>{} - level_1D));
+        pz = pz | (py_2D << (maxTreeLevel<KeyType>{} - level_1D));
+    }
+    else if (long_dimension == 1)
+    {
+        px = px << level_1D | px_2D;
+        pz = pz << level_1D | py_2D;
+    }
+    else
+    {
+        px = px << level_1D | px_2D;
+        py = py << level_1D | py_2D;
+    }
+
+    return {px, py, pz};
+}
+
 // Lam and Shapiro inverse function of hilbert
 template<class KeyType>
-HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2D(KeyType key) noexcept
+HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned> decodeHilbert2D(KeyType key, unsigned order) noexcept
 {
     unsigned sa, sb;
     unsigned x = 0, y = 0, temp = 0;
-    unsigned order = maxTreeLevel<KeyType>{};
 
     for (unsigned level = 0; level < 2 * order; level += 2)
     {
