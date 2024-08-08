@@ -108,6 +108,66 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
     return key;
 }
 
+/*! @brief compute the Hilbert key for a 3D point of integer coordinates
+ *
+ * @tparam     KeyType   32- or 64-bit unsigned integer
+ * @param[in]  px,py,pz  input coordinates in [0:2^maxTreeLevel<KeyType>{}]
+ * @return               the Hilbert key
+ */
+template<class KeyType>
+constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
+iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
+{
+    assert(px < (1u << maxTreeLevel<KeyType>{}));
+    assert(py < (1u << maxTreeLevel<KeyType>{}));
+    assert(pz < (1u << maxTreeLevel<KeyType>{}));
+    assert(level_1D < maxTreeLevel<KeyType>{});
+
+#if !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
+    constexpr unsigned mortonToHilbert[8] = {0, 1, 3, 2, 7, 6, 4, 5};
+#endif
+
+    KeyType key = 0;
+
+    for (int level = maxTreeLevel<KeyType>{} - 1 - level_1D; level >= 0; --level)
+    {
+        unsigned xi = (px >> level) & 1u;
+        unsigned yi = (py >> level) & 1u;
+        unsigned zi = (pz >> level) & 1u;
+
+        // append 3 bits to the key
+        unsigned octant = (xi << 2) | (yi << 1) | zi;
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
+        key = (key << 3) + mortonToHilbertDevice[octant];
+#else
+        key = (key << 3) + mortonToHilbert[octant];
+#endif
+
+        // turn px, py and pz
+        px ^= -(xi & ((!yi) | zi));
+        py ^= -((xi & (yi | zi)) | (yi & (!zi)));
+        pz ^= -((xi & (!yi) & (!zi)) | (yi & (!zi)));
+
+        if (zi)
+        {
+            // cyclic rotation
+            unsigned pt = px;
+            px          = py;
+            py          = pz;
+            pz          = pt;
+        }
+        else if (!yi)
+        {
+            // swap x and z
+            unsigned pt = px;
+            px          = pz;
+            pz          = pt;
+        }
+    }
+
+    return key;
+}
+
 template<class KeyType>
 HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType> iHilbert2D(unsigned px, unsigned py) noexcept;
 
@@ -122,7 +182,7 @@ inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept;
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_dimension) noexcept
+iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_dimension) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
@@ -310,7 +370,7 @@ decodeHilbert2D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept;
 //! @brief inverse function of iHilbert
 template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
-decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
+decodeHilbert2DMixed(KeyType key, int level_1D, int long_dimension) noexcept
 {
     unsigned px = 0;
     unsigned py = 0;

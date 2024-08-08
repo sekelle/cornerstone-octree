@@ -118,6 +118,10 @@ public:
         {
             computeSfc1D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box);
         }
+        else if constexpr (std::is_same_v<KeyType, Sfc2DMixedKind<Integer>>)
+        {
+            computeSfc2D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box);
+        }
         else { computeSfcKeys(x_.data(), y_.data(), z_.data(), keyData, n, box); }
 
         std::vector<LocalIndex> sfcOrder(n);
