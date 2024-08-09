@@ -228,6 +228,8 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
     key_2d = key;
     std::cout << "filtered 2D key: " << std::bitset<32>(key_2d) << std::endl;
     key = 0;
+    // Remove LSB from px
+    px = px >> level_1D;
     for (int level = maxTreeLevel<KeyType>{} - level_1D - 1; level >= 0; --level)
     {
         unsigned xi = (px >> level) & 1u;
