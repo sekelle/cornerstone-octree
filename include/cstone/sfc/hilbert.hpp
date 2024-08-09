@@ -232,7 +232,7 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_2D, int s
         std::cout << "level: " << level << " key: " << std::bitset<2>(((key_2d >> (2 * level)) & 3)) << std::endl;
     }
     key_2d = key;
-    std::cout << "filtered 2D key: " << std::bitset<32>(key_2d) << std::endl;
+    std::cout << "filtered 2D key: " << std::bitset<64>(key_2d) << std::endl;
     key = 0;
     for (int level = maxTreeLevel<KeyType>{} - levels_2D - 1; level >= 0; --level)
     {
@@ -269,18 +269,11 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_2D, int s
             pz          = pt;
         }
     }
-    unsigned mask{};
-    for (int level{0}; level < static_cast<int>(maxTreeLevel<KeyType>{} - levels_2D); ++level)
-    {
-        mask = (mask << 3) | 7;
-    }
-    std::cout << "3d key:         " << std::bitset<32>(key) << std::endl;
-    std::cout << "mask:           " << std::bitset<32>(mask) << std::endl;
-    // key = (key & mask) | ;
+    std::cout << "3d key:          " << std::bitset<64>(key) << std::endl;
     const auto key_2d_shifted = key_2d << (3 * (maxTreeLevel<KeyType>{} - levels_2D));
-    std::cout << "2d key shifted: " << std::bitset<32>(key_2d_shifted) << std::endl;
-    key = key_2d_shifted | (key & mask);
-    std::cout << "final key:      " << std::bitset<32>(key) << std::endl;
+    std::cout << "2d key shifted:  " << std::bitset<64>(key_2d_shifted) << std::endl;
+    key = key_2d_shifted | key;
+    std::cout << "final key:       " << std::bitset<64>(key) << std::endl;
     return key;
 }
 
@@ -477,7 +470,7 @@ decodeHilbert2DMixed(KeyType key, int levels_2D, int short_dimension) noexcept
         py |= ((xi ^ yi) << level);
         pz |= ((yi ^ zi) << level);
     }
-    std::cout << "px: " << std::bitset<32>(px) << " py: " << std::bitset<32>(py) << " pz: " << std::bitset<32>(pz)
+    std::cout << "px: " << std::bitset<64>(px) << " py: " << std::bitset<64>(py) << " pz: " << std::bitset<64>(pz)
               << std::endl;
 
     unsigned masked_2D_key{};
@@ -487,7 +480,7 @@ decodeHilbert2DMixed(KeyType key, int levels_2D, int short_dimension) noexcept
         masked_2D_key = (masked_2D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - levels_2D + level))) & 3);
     }
 
-    std::cout << "masked 2D key: " << std::bitset<32>(masked_2D_key) << std::endl;
+    std::cout << "masked 2D key: " << std::bitset<64>(masked_2D_key) << std::endl;
 
     auto xy_2d     = decodeHilbert2D<KeyType>(masked_2D_key);
     unsigned px_2D = get<0>(xy_2d);

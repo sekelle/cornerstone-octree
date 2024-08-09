@@ -67,7 +67,7 @@ TEST(MixedHilbert1D3D, InversionTest2D3D)
 template<class KeyType>
 void inversionTest2D3D()
 {
-    int numKeys      = 3;
+    int numKeys      = 10;
     int maxCoordLong = (1 << maxTreeLevel<KeyType>{}) - 1;
     unsigned levels_2D{2};
     int maxCoordShort = (1 << (maxTreeLevel<KeyType>{} - levels_2D)) - 1;
@@ -106,8 +106,6 @@ void inversionTest2D3D()
 
 TEST(MixedHilbert2D3D, InversionTest2D3D)
 {
-    std::cout << "======================== Inversion test 2D3D ========================" << std::endl;
-
     inversionTest2D3D<unsigned>();
-    // inversionTest2D3D<uint64_t>();
+    inversionTest2D3D<uint64_t>();
 }
