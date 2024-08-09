@@ -92,12 +92,6 @@ void inversionTest2D3D()
         KeyType hilbertKey = iHilbert2DMixed<KeyType>(x[i], y[i], z[i], levels_2D, 0);
 
         auto [a, b, c] = decodeHilbert2DMixed(hilbertKey, levels_2D, 0);
-        std::cout << "x : " << std::bitset<10>(x[i]) << " y : " << std::bitset<10>(y[i])
-                  << " z : " << std::bitset<10>(z[i]) << std::endl;
-        std::cout << "a : " << std::bitset<10>(a) << " b : " << std::bitset<10>(b) << " c : " << std::bitset<10>(c)
-                  << std::endl;
-        std::cout << "hilbert  key: " << std::bitset<32>(hilbertKey) << std::endl
-                  << "original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
         EXPECT_EQ(x[i], a);
         EXPECT_EQ(y[i], b);
         EXPECT_EQ(z[i], c);
