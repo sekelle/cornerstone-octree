@@ -228,10 +228,10 @@ iSfc1DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level)
 //! @brief Key encode overload for Mixed Hilbert keys
 template<class KeyType>
 HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert1DMixed<KeyType>{}, KeyType>
-iSfc2DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, int long_dimension)
+iSfc2DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, int short_dimension)
 {
     std::cout << "My iSfcKey" << std::endl;
-    return KeyType{iHilbert1DMixed<typename KeyType::ValueType>(ix, iy, iz, level, long_dimension)};
+    return KeyType{iHilbert1DMixed<typename KeyType::ValueType>(ix, iy, iz, level, short_dimension)};
 }
 
 template<class KeyType, class T>
