@@ -116,7 +116,7 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
+iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_dimension) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
@@ -128,6 +128,24 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
 #endif
 
     KeyType key = 0;
+
+    unsigned p_long_dimension = 0;
+    if (long_dimension == 0)
+    {
+        p_long_dimension = px;
+        std::cout << "[1D3D] long dimension: x " << std::bitset<32>(px) << std::endl;
+    }
+    else if (long_dimension == 1) { p_long_dimension = py; }
+    else { p_long_dimension = pz; }
+    std::cout << "[1D3D] p long dimension: " << std::bitset<32>(p_long_dimension) << std::endl;
+    for (int level = maxTreeLevel<KeyType>{} - 1; level >= maxTreeLevel<KeyType>{} - level_1D; --level)
+    {
+        key = (key << 3) | ((p_long_dimension >> level) & 1);
+    }
+    std::cout << "[1D3D] key after long dim: " << std::bitset<32>(key) << std::endl;
+    if (long_dimension == 0) { px = px >> level_1D; }
+    else if (long_dimension == 1) { py = py >> level_1D; }
+    else { pz = pz >> level_1D; }
 
     for (int level = maxTreeLevel<KeyType>{} - 1 - level_1D; level >= 0; --level)
     {
@@ -164,6 +182,7 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D) noexcept
             pz          = pt;
         }
     }
+    std::cout << "[1D3D] final key: " << std::bitset<32>(key) << std::endl;
 
     return key;
 }
@@ -212,12 +231,6 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int short_d
 
     KeyType key = 0;
 
-    // for (int level = level_1D - 1; level >= 0; --level)
-    // {
-    //     const auto key_2d = calculate2Dkey<KeyType>(px_2D, py_2D, level);
-    //     std::cout << "2D hilbert key for " << level << " level: " << std::bitset<6>(key_2d) << std::endl;
-    //     key = (key << 3) + key_2d;
-    // }
     auto key_2d = iHilbert2D<KeyType>(px_2D, py_2D);
     std::cout << "original 2D key: " << std::bitset<20>(key_2d) << std::endl;
     for (int level{level_1D - 1}; level >= 0; --level)
