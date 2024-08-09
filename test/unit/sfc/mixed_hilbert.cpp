@@ -26,57 +26,47 @@ TEST(MixedHilbertSample, Long1DDomain)
 
 //! @brief tests numKeys random 3D points for encoding/decoding consistency
 template<class KeyType>
-void inversionTest()
+void inversionTest2D3D()
 {
-    int numKeys  = 3;
-    int maxCoord = (1 << maxTreeLevel<KeyType>{}) - 1;
+    int numKeys      = 3;
+    int maxCoordLong = (1 << maxTreeLevel<KeyType>{}) - 1;
+    int levels_2D{2};
+    int maxCoordShort = (1 << (maxTreeLevel<KeyType>{} - levels_2D)) - 1;
 
     std::mt19937 gen;
-    std::uniform_int_distribution<unsigned> distribution(0, maxCoord);
+    std::uniform_int_distribution<unsigned> distribution_long(0, maxCoordLong);
+    std::uniform_int_distribution<unsigned> distribution_short(0, maxCoordShort);
 
-    auto getRand = [&distribution, &gen]() { return distribution(gen); };
+    auto getRandLong  = [&distribution_long, &gen]() { return distribution_long(gen); };
+    auto getRandShort = [&distribution_short, &gen]() { return distribution_short(gen); };
 
     std::vector<unsigned> x(numKeys);
     std::vector<unsigned> y(numKeys);
     std::vector<unsigned> z(numKeys);
 
-    std::generate(begin(x), end(x), getRand);
-    std::generate(begin(y), end(y), getRand);
-    std::generate(begin(z), end(z), getRand);
+    std::generate(begin(x), end(x), getRandShort);
+    std::generate(begin(y), end(y), getRandLong);
+    std::generate(begin(z), end(z), getRandLong);
 
     for (int i = 0; i < numKeys; ++i)
     {
-        KeyType hilbertKey = iHilbert2DMixed<KeyType>(x[i], y[i], z[i], 2, 0);
+        KeyType hilbertKey = iHilbert2DMixed<KeyType>(x[i], y[i], z[i], levels_2D, 0);
 
-        auto [a, b, c] = decodeHilbert2DMixed(hilbertKey, 2, 0);
-        std::cout << "x : " << std::bitset<32>(x[i]) << " y : " << std::bitset<32>(y[i])
-                  << " z : " << std::bitset<32>(z[i]) << std::endl;
-        std::cout << "a : " << std::bitset<32>(a) << " b : " << std::bitset<32>(b) << " c : " << std::bitset<32>(c)
+        auto [a, b, c] = decodeHilbert2DMixed(hilbertKey, levels_2D, 0);
+        std::cout << "x : " << std::bitset<10>(x[i]) << " y : " << std::bitset<10>(y[i])
+                  << " z : " << std::bitset<10>(z[i]) << std::endl;
+        std::cout << "a : " << std::bitset<10>(a) << " b : " << std::bitset<10>(b) << " c : " << std::bitset<10>(c)
                   << std::endl;
         std::cout << "hilbert  key: " << std::bitset<32>(hilbertKey) << std::endl
                   << "original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
-        // EXPECT_EQ(x[i], a);
+        EXPECT_EQ(x[i], a);
         EXPECT_EQ(y[i], b);
         EXPECT_EQ(z[i], c);
     }
-
-    std::cout << "========== Extra tests ==============" << std::endl;
-
-    for (int i = 0; i < numKeys; ++i)
-    {
-        KeyType hilbertKey = iHilbert2D<KeyType>(y[i], z[i]);
-        std::cout << "y: " << std::bitset<32>(y[i]) << " z: " << std::bitset<32>(z[i]) << std::endl;
-        auto [a, b] = decodeHilbert2D<KeyType>(hilbertKey);
-        std::cout << "a: " << std::bitset<32>(a) << " b: " << std::bitset<32>(b) << std::endl;
-        std::cout << "hilbert 2d key: " << std::bitset<32>(hilbertKey) << std::endl;
-        EXPECT_EQ(y[i], a);
-        EXPECT_EQ(z[i], b);
-    }
 }
 
-TEST(MixedHilbertSample, InversionTest)
+TEST(MixedHilbertSample, InversionTest2D3D)
 {
-    std::cout << "========== Inversion tests ==============" << std::endl;
-    inversionTest<unsigned>();
-    // inversionTest<uint64_t>();
+    inversionTest2D3D<unsigned>();
+    // inversionTest2D3D<uint64_t>();
 }
