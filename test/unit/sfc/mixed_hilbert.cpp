@@ -26,6 +26,54 @@ TEST(MixedHilbertSample, Long1DDomain)
 
 //! @brief tests numKeys random 3D points for encoding/decoding consistency
 template<class KeyType>
+void inversionTest1D3D()
+{
+    int numKeys      = 10;
+    int maxCoordLong = (1 << maxTreeLevel<KeyType>{}) - 1;
+    int levels_2D{2};
+    int maxCoordShort = (1 << (maxTreeLevel<KeyType>{} - levels_2D)) - 1;
+
+    std::mt19937 gen;
+    std::uniform_int_distribution<unsigned> distribution_long(0, maxCoordLong);
+    std::uniform_int_distribution<unsigned> distribution_short(0, maxCoordShort);
+
+    auto getRandLong  = [&distribution_long, &gen]() { return distribution_long(gen); };
+    auto getRandShort = [&distribution_short, &gen]() { return distribution_short(gen); };
+
+    std::vector<unsigned> x(numKeys);
+    std::vector<unsigned> y(numKeys);
+    std::vector<unsigned> z(numKeys);
+
+    std::generate(begin(x), end(x), getRandLong);
+    std::generate(begin(y), end(y), getRandShort);
+    std::generate(begin(z), end(z), getRandShort);
+
+    for (int i = 0; i < numKeys; ++i)
+    {
+        KeyType hilbertKey = iHilbert1DMixed<KeyType>(x[i], y[i], z[i], levels_2D, 0);
+
+        auto [a, b, c] = decodeHilbert1DMixed(hilbertKey, levels_2D, 0);
+        std::cout << "x : " << std::bitset<10>(x[i]) << " y : " << std::bitset<10>(y[i])
+                  << " z : " << std::bitset<10>(z[i]) << std::endl;
+        std::cout << "a : " << std::bitset<10>(a) << " b : " << std::bitset<10>(b) << " c : " << std::bitset<10>(c)
+                  << std::endl;
+        std::cout << "hilbert  key: " << std::bitset<32>(hilbertKey) << std::endl
+                  << "original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
+        EXPECT_EQ(x[i], a);
+        EXPECT_EQ(y[i], b);
+        EXPECT_EQ(z[i], c);
+    }
+}
+
+TEST(MixedHilbert1D3D, InversionTest2D3D)
+{
+    std::cout << "======================== Inversion test 1D3D ========================" << std::endl;
+    inversionTest1D3D<unsigned>();
+    inversionTest1D3D<uint64_t>();
+}
+
+//! @brief tests numKeys random 3D points for encoding/decoding consistency
+template<class KeyType>
 void inversionTest2D3D()
 {
     int numKeys      = 3;
@@ -65,8 +113,10 @@ void inversionTest2D3D()
     }
 }
 
-TEST(MixedHilbertSample, InversionTest2D3D)
+TEST(MixedHilbert2D3D, InversionTest2D3D)
 {
+    std::cout << "======================== Inversion test 2D3D ========================" << std::endl;
+
     inversionTest2D3D<unsigned>();
     // inversionTest2D3D<uint64_t>();
 }
