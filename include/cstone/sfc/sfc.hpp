@@ -33,9 +33,11 @@
 
 #pragma once
 
+#include <format>
+
 #include "cstone/util/strong_type.hpp"
 
-#include <format>
+#include "box.hpp"
 #include "morton.hpp"
 #include "hilbert.hpp"
 
