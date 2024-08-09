@@ -28,7 +28,7 @@ void inversionTest1D3D()
 {
     int numKeys      = 10;
     int maxCoordLong = (1 << maxTreeLevel<KeyType>{}) - 1;
-    int levels_2D{2};
+    unsigned levels_2D{2};
     int maxCoordShort = (1 << (maxTreeLevel<KeyType>{} - levels_2D)) - 1;
 
     std::mt19937 gen;
@@ -69,7 +69,7 @@ void inversionTest2D3D()
 {
     int numKeys      = 3;
     int maxCoordLong = (1 << maxTreeLevel<KeyType>{}) - 1;
-    int levels_2D{2};
+    unsigned levels_2D{2};
     int maxCoordShort = (1 << (maxTreeLevel<KeyType>{} - levels_2D)) - 1;
 
     std::mt19937 gen;
