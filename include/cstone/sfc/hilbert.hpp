@@ -116,13 +116,14 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_dimension) noexcept
+iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_1D, int long_dimension) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
     assert(pz < (1u << maxTreeLevel<KeyType>{}));
-    assert(level_1D < maxTreeLevel<KeyType>{});
-    assert(level_1D % 2 == 0);
+    assert(levels_1D < maxTreeLevel<KeyType>{});
+    assert(levels_1D > 0);
+    assert(levels_1D % 2 == 0);
 
 #if !defined(__CUDA_ARCH__) && !defined(__HIP_DEVICE_COMPILE__)
     constexpr unsigned mortonToHilbert[8] = {0, 1, 3, 2, 7, 6, 4, 5};
@@ -134,12 +135,13 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
     if (long_dimension == 0) { p_long_dimension = px; }
     else if (long_dimension == 1) { p_long_dimension = py; }
     else { p_long_dimension = pz; }
-    for (int level = maxTreeLevel<KeyType>{} - 2; level >= maxTreeLevel<KeyType>{} - level_1D; level -= 2)
+    for (int level = maxTreeLevel<KeyType>{} - 2; level >= static_cast<int>(maxTreeLevel<KeyType>{} - levels_1D);
+         level -= 2)
     {
         key = (key << 3) | ((p_long_dimension >> level) & 3);
     }
 
-    for (int level = maxTreeLevel<KeyType>{} - level_1D - 1; level >= 0; --level)
+    for (int level = maxTreeLevel<KeyType>{} - levels_1D - 1; level >= 0; --level)
     {
         unsigned xi = (px >> level) & 1u;
         unsigned yi = (py >> level) & 1u;
@@ -191,18 +193,19 @@ inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept;
  */
 template<class KeyType>
 constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
-iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int short_dimension) noexcept
+iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_2D, int short_dimension) noexcept
 {
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
     assert(pz < (1u << maxTreeLevel<KeyType>{}));
-    assert(level_1D < maxTreeLevel<KeyType>{});
+    assert(levels_2D < maxTreeLevel<KeyType>{});
+    assert(levels_2D > 0);
 
     unsigned px_2D, py_2D;
     if (short_dimension == 0)
     {
-        px_2D = py >> (maxTreeLevel<KeyType>{} - level_1D);
-        py_2D = pz >> (maxTreeLevel<KeyType>{} - level_1D);
+        px_2D = py >> (maxTreeLevel<KeyType>{} - levels_2D);
+        py_2D = pz >> (maxTreeLevel<KeyType>{} - levels_2D);
     }
     else if (short_dimension == 1)
     {
@@ -223,7 +226,7 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int short_d
 
     auto key_2d = iHilbert2D<KeyType>(px_2D, py_2D);
     std::cout << "original 2D key: " << std::bitset<20>(key_2d) << std::endl;
-    for (int level{level_1D - 1}; level >= 0; --level)
+    for (int level{static_cast<int>(levels_2D) - 1}; level >= 0; --level)
     {
         key = (key << 3) + ((key_2d >> (2 * level)) & 3);
         std::cout << "level: " << level << " key: " << std::bitset<2>(((key_2d >> (2 * level)) & 3)) << std::endl;
@@ -231,7 +234,7 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int short_d
     key_2d = key;
     std::cout << "filtered 2D key: " << std::bitset<32>(key_2d) << std::endl;
     key = 0;
-    for (int level = maxTreeLevel<KeyType>{} - level_1D - 1; level >= 0; --level)
+    for (int level = maxTreeLevel<KeyType>{} - levels_2D - 1; level >= 0; --level)
     {
         unsigned xi = (px >> level) & 1u;
         unsigned yi = (py >> level) & 1u;
@@ -267,14 +270,14 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int short_d
         }
     }
     unsigned mask{};
-    for (int level{0}; level < maxTreeLevel<KeyType>{} - level_1D; ++level)
+    for (int level{0}; level < static_cast<int>(maxTreeLevel<KeyType>{} - levels_2D); ++level)
     {
         mask = (mask << 3) | 7;
     }
     std::cout << "3d key:         " << std::bitset<32>(key) << std::endl;
     std::cout << "mask:           " << std::bitset<32>(mask) << std::endl;
     // key = (key & mask) | ;
-    const auto key_2d_shifted = key_2d << (3 * (maxTreeLevel<KeyType>{} - level_1D));
+    const auto key_2d_shifted = key_2d << (3 * (maxTreeLevel<KeyType>{} - levels_2D));
     std::cout << "2d key shifted: " << std::bitset<32>(key_2d_shifted) << std::endl;
     key = key_2d_shifted | (key & mask);
     std::cout << "final key:      " << std::bitset<32>(key) << std::endl;
@@ -369,13 +372,13 @@ HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned> decodeHilbert(K
 //! @brief inverse function of iHilbert
 template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
-decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
+decodeHilbert1DMixed(KeyType key, int levels_1D, int long_dimension) noexcept
 {
     unsigned px = 0;
     unsigned py = 0;
     unsigned pz = 0;
 
-    for (unsigned level = 0; level < maxTreeLevel<KeyType>{} - level_1D; ++level)
+    for (unsigned level = 0; level < maxTreeLevel<KeyType>{} - levels_1D; ++level)
     {
         unsigned octant   = (key >> (3 * level)) & 7u;
         const unsigned xi = octant >> 2u;
@@ -412,12 +415,12 @@ decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
 
     unsigned masked_1D_key{};
 
-    for (int level{level_1D - 1}; level >= 0; --level)
+    for (int level{levels_1D - 1}; level >= 0; --level)
     {
-        masked_1D_key = (masked_1D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - level_1D + level))) & 3);
+        masked_1D_key = (masked_1D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - levels_1D + level))) & 3);
     }
 
-    masked_1D_key = masked_1D_key << (maxTreeLevel<KeyType>{} - level_1D);
+    masked_1D_key = masked_1D_key << (maxTreeLevel<KeyType>{} - levels_1D);
 
     if (long_dimension == 0) { px = px | masked_1D_key; }
     else if (long_dimension == 1) { py = py | masked_1D_key; }
@@ -433,13 +436,13 @@ decodeHilbert2D(KeyType key, unsigned order = maxTreeLevel<KeyType>{}) noexcept;
 //! @brief inverse function of iHilbert
 template<class KeyType>
 HOST_DEVICE_FUN inline util::tuple<unsigned, unsigned, unsigned>
-decodeHilbert2DMixed(KeyType key, int level_1D, int short_dimension) noexcept
+decodeHilbert2DMixed(KeyType key, int levels_2D, int short_dimension) noexcept
 {
     unsigned px = 0;
     unsigned py = 0;
     unsigned pz = 0;
 
-    for (unsigned level = 0; level < maxTreeLevel<KeyType>{} - level_1D; ++level)
+    for (unsigned level = 0; level < maxTreeLevel<KeyType>{} - levels_2D; ++level)
     {
         unsigned octant = (key >> (3 * level)) & 7u;
         std::cout << "level: " << level << " octant: " << std::bitset<3>(octant) << std::endl;
@@ -479,9 +482,9 @@ decodeHilbert2DMixed(KeyType key, int level_1D, int short_dimension) noexcept
 
     unsigned masked_2D_key{};
 
-    for (int level{level_1D - 1}; level >= 0; --level)
+    for (int level{levels_2D - 1}; level >= 0; --level)
     {
-        masked_2D_key = (masked_2D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - level_1D + level))) & 3);
+        masked_2D_key = (masked_2D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - levels_2D + level))) & 3);
     }
 
     std::cout << "masked 2D key: " << std::bitset<32>(masked_2D_key) << std::endl;
@@ -492,18 +495,18 @@ decodeHilbert2DMixed(KeyType key, int level_1D, int short_dimension) noexcept
 
     if (short_dimension == 0)
     {
-        py = py | (px_2D << (maxTreeLevel<KeyType>{} - level_1D));
-        pz = pz | (py_2D << (maxTreeLevel<KeyType>{} - level_1D));
+        py = py | (px_2D << (maxTreeLevel<KeyType>{} - levels_2D));
+        pz = pz | (py_2D << (maxTreeLevel<KeyType>{} - levels_2D));
     }
     else if (short_dimension == 1)
     {
-        px = px << level_1D | px_2D;
-        pz = pz << level_1D | py_2D;
+        px = px << levels_2D | px_2D;
+        pz = pz << levels_2D | py_2D;
     }
     else
     {
-        px = px << level_1D | px_2D;
-        py = py << level_1D | py_2D;
+        px = px << levels_2D | px_2D;
+        py = py << levels_2D | py_2D;
     }
 
     return {px, py, pz};
