@@ -116,11 +116,11 @@ public:
 
         if constexpr (std::is_same_v<KeyType, Sfc1DMixedKind<Integer>>)
         {
-            computeSfc1D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box);
+            computeSfc1D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box, 2);
         }
         else if constexpr (std::is_same_v<KeyType, Sfc2DMixedKind<Integer>>)
         {
-            computeSfc2D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box);
+            computeSfc2D3DKeys(x_.data(), y_.data(), z_.data(), keyData, n, box, 2);
         }
         else { computeSfcKeys(x_.data(), y_.data(), z_.data(), keyData, n, box); }
 

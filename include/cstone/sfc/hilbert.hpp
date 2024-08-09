@@ -131,19 +131,13 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
     KeyType key = 0;
 
     unsigned p_long_dimension = 0;
-    if (long_dimension == 0)
-    {
-        p_long_dimension = px;
-        std::cout << "[1D3D] long dimension: x " << std::bitset<10>(px) << std::endl;
-    }
+    if (long_dimension == 0) { p_long_dimension = px; }
     else if (long_dimension == 1) { p_long_dimension = py; }
     else { p_long_dimension = pz; }
-    std::cout << "[1D3D] p long dimension: " << std::bitset<10>(p_long_dimension) << std::endl;
     for (int level = maxTreeLevel<KeyType>{} - 2; level >= maxTreeLevel<KeyType>{} - level_1D; level -= 2)
     {
         key = (key << 3) | ((p_long_dimension >> level) & 3);
     }
-    std::cout << "[1D3D] key after long dim: " << std::bitset<32>(key) << std::endl;
 
     for (int level = maxTreeLevel<KeyType>{} - level_1D - 1; level >= 0; --level)
     {
@@ -180,8 +174,6 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, int level_1D, int long_di
             pz          = pt;
         }
     }
-    std::cout << "[1D3D] final key: " << std::bitset<32>(key) << std::endl;
-
     return key;
 }
 
@@ -418,9 +410,6 @@ decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
         pz |= ((yi ^ zi) << level);
     }
 
-    std::cout << "[1D3D] px: " << std::bitset<32>(px) << " py: " << std::bitset<32>(py)
-              << " pz: " << std::bitset<32>(pz) << std::endl;
-
     unsigned masked_1D_key{};
 
     for (int level{level_1D - 1}; level >= 0; --level)
@@ -428,7 +417,6 @@ decodeHilbert1DMixed(KeyType key, int level_1D, int long_dimension) noexcept
         masked_1D_key = (masked_1D_key << 2) | ((key >> (3 * (maxTreeLevel<KeyType>{} - level_1D + level))) & 3);
     }
 
-    std::cout << "[1D3D] masked 1D key: " << std::bitset<32>(masked_1D_key) << std::endl;
     masked_1D_key = masked_1D_key << (maxTreeLevel<KeyType>{} - level_1D);
 
     if (long_dimension == 0) { px = px | masked_1D_key; }

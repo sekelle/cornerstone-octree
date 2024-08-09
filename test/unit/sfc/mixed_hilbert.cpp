@@ -13,15 +13,13 @@ TEST(MixedHilbertSample, Long1DDomain)
     Box<real> box{0, 100, -1, 1, -1, 1};
     RandomCoordinates<real, Sfc1DMixedKind<IntegerType>> c(n, box);
 
+    unsigned levels_1D = 2;
+
     std::vector<IntegerType> testCodes(n);
-    computeSfc1D3DKeys(c.x().data(), c.y().data(), c.z().data(), Sfc1DMixedKindPointer(testCodes.data()), n, box);
+    computeSfc1D3DKeys(c.x().data(), c.y().data(), c.z().data(), Sfc1DMixedKindPointer(testCodes.data()), n, box,
+                       levels_1D);
 
     EXPECT_TRUE(std::is_sorted(testCodes.begin(), testCodes.end()));
-    for (int i{0}; i < n; ++i)
-    {
-        std::cout << "Coord:\t" << c.x()[i] << "\t" << c.y()[i] << "\t" << c.z()[i] << "\tCode binary:\t"
-                  << std::bitset<32>(testCodes[i]) << std::endl;
-    }
 }
 
 //! @brief tests numKeys random 3D points for encoding/decoding consistency
@@ -53,12 +51,6 @@ void inversionTest1D3D()
         KeyType hilbertKey = iHilbert1DMixed<KeyType>(x[i], y[i], z[i], levels_2D, 0);
 
         auto [a, b, c] = decodeHilbert1DMixed(hilbertKey, levels_2D, 0);
-        std::cout << "x : " << std::bitset<10>(x[i]) << " y : " << std::bitset<10>(y[i])
-                  << " z : " << std::bitset<10>(z[i]) << std::endl;
-        std::cout << "a : " << std::bitset<10>(a) << " b : " << std::bitset<10>(b) << " c : " << std::bitset<10>(c)
-                  << std::endl;
-        std::cout << "hilbert  key: " << std::bitset<32>(hilbertKey) << std::endl
-                  << "original key: " << std::bitset<32>(iHilbert<KeyType>(x[i], y[i], z[i])) << std::endl;
         EXPECT_EQ(x[i], a);
         EXPECT_EQ(y[i], b);
         EXPECT_EQ(z[i], c);
@@ -67,7 +59,6 @@ void inversionTest1D3D()
 
 TEST(MixedHilbert1D3D, InversionTest2D3D)
 {
-    std::cout << "======================== Inversion test 1D3D ========================" << std::endl;
     inversionTest1D3D<unsigned>();
     inversionTest1D3D<uint64_t>();
 }
