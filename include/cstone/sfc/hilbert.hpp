@@ -182,9 +182,6 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_1D, axis 
 template<class KeyType>
 HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType> iHilbert2D(unsigned px, unsigned py) noexcept;
 
-template<class KeyType>
-inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept;
-
 /*! @brief compute the Hilbert key for a 3D point of integer coordinates
  *
  * @tparam     KeyType   32- or 64-bit unsigned integer
@@ -274,23 +271,6 @@ iHilbert2DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_2D, axis 
     return key;
 }
 
-template<class KeyType>
-inline KeyType calculate2Dkey(unsigned& px, unsigned& py, int level) noexcept
-{
-    KeyType temp, key;
-    unsigned xi, yi;
-    xi = (px >> level) & 1u; // Get bit level of x.
-    yi = (py >> level) & 1u; // Get bit level of y.
-    if (yi == 0)
-    {
-        temp = px;           // Swap x and y and,
-        px   = py ^ (-xi);   // if xi = 1,
-        py   = temp ^ (-xi); // complement them.
-    }
-    key = 2 * xi + (xi ^ yi); // Append two bits to key.
-    return key;
-}
-
 /*! @brief compute the Hilbert key for a 2D point of integer coordinates
  *
  * @tparam     KeyType   32- or 64-bit unsigned integer
@@ -304,11 +284,22 @@ HOST_DEVICE_FUN std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType> iHilbert2
     assert(px < (1u << maxTreeLevel<KeyType>{}));
     assert(py < (1u << maxTreeLevel<KeyType>{}));
 
+    unsigned xi, yi;
+    unsigned temp;
     KeyType key = 0;
 
     for (int level = maxTreeLevel<KeyType>{} - 1; level >= 0; level--)
     {
-        key = 4 * key + calculate2Dkey<KeyType>(px, py, level); // Append two bits to key.
+        xi = (px >> level) & 1u; // Get bit level of x.
+        yi = (py >> level) & 1u; // Get bit level of y.
+
+        if (yi == 0)
+        {
+            temp = px;           // Swap x and y and,
+            px   = py ^ (-xi);   // if xi = 1,
+            py   = temp ^ (-xi); // complement them.
+        }
+        key = 4 * key + 2 * xi + (xi ^ yi); // Append two bits to key.
     }
     return key;
 }
