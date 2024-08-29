@@ -219,7 +219,7 @@ HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert<KeyType>{}, KeyType> iSfcKey(u
 //! @brief Key encode overload for Mixed Hilbert keys
 template<class KeyType>
 HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert1DMixed<KeyType>{}, KeyType>
-iSfc1DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, int long_dimension)
+iSfc1DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, axis long_dimension)
 {
     return KeyType{iHilbert1DMixed<typename KeyType::ValueType>(ix, iy, iz, level, long_dimension)};
 }
@@ -227,7 +227,7 @@ iSfc1DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, int long_dimens
 //! @brief Key encode overload for Mixed Hilbert keys
 template<class KeyType>
 HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert1DMixed<KeyType>{}, KeyType>
-iSfc2DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, int short_dimension)
+iSfc2DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, axis short_dimension)
 {
     return KeyType{iHilbert2DMixed<typename KeyType::ValueType>(ix, iy, iz, level, short_dimension)};
 }
@@ -269,7 +269,7 @@ HOST_DEVICE_FUN inline KeyType sfc1D3D(T x, T y, T z, T xmin, T ymin, T zmin, T 
     assert(iy >= 0);
     assert(iz >= 0);
 
-    return iSfc1DMixedKey<KeyType>(ix, iy, iz, levels_1D, 0);
+    return iSfc1DMixedKey<KeyType>(ix, iy, iz, levels_1D, axis::x);
 }
 
 template<class KeyType, class T>
@@ -289,7 +289,7 @@ HOST_DEVICE_FUN inline KeyType sfc2D3D(T x, T y, T z, T xmin, T ymin, T zmin, T 
     assert(iy >= 0);
     assert(iz >= 0);
 
-    return iSfc2DMixedKey<KeyType>(ix, iy, iz, levels_2D, 0);
+    return iSfc2DMixedKey<KeyType>(ix, iy, iz, levels_2D, axis::x);
 }
 
 /*! @brief Calculates a Hilbert key for a 3D point within the specified box

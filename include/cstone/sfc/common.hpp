@@ -44,6 +44,13 @@
 namespace cstone
 {
 
+enum axis
+{
+    x,
+    y,
+    z
+};
+
 /*! @brief normalize a floating point number in [0,1] to an integer in [0 : 2^(10 or 21)]
  *
  * @tparam KeyType  32-bit or 64-bit unsigned integer
