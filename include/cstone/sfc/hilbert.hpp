@@ -132,9 +132,24 @@ iHilbert1DMixed(unsigned px, unsigned py, unsigned pz, unsigned levels_1D, axis 
     KeyType key = 0;
 
     unsigned p_long_dimension = 0;
-    if (long_dimension == axis::x) { p_long_dimension = px; }
-    else if (long_dimension == axis::y) { p_long_dimension = py; }
-    else { p_long_dimension = pz; }
+    if (long_dimension == axis::x)
+    {
+        assert(py < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        assert(pz < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        p_long_dimension = px;
+    }
+    else if (long_dimension == axis::y)
+    {
+        assert(px < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        assert(pz < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        p_long_dimension = py;
+    }
+    else
+    {
+        assert(px < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        assert(py < (1u << (maxTreeLevel<KeyType>{} - levels_1D)));
+        p_long_dimension = pz;
+    }
     for (int level = maxTreeLevel<KeyType>{} - 2; level >= static_cast<int>(maxTreeLevel<KeyType>{} - levels_1D);
          level -= 2)
     {

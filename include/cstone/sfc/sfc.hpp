@@ -200,6 +200,12 @@ struct IsHilbert1DMixed : std::bool_constant<std::is_same_v<KeyType, Hilbert1DMi
 {
 };
 
+//! @brief Meta function to detect Mixed 2D Hilbert key types
+template<class KeyType>
+struct IsHilbert2DMixed : std::bool_constant<std::is_same_v<KeyType, Hilbert2DMixedKey<typename KeyType::ValueType>>>
+{
+};
+
 //! @brief Key encode overload for Morton keys
 template<class KeyType>
 HOST_DEVICE_FUN inline std::enable_if_t<IsMorton<KeyType>{}, KeyType> iSfcKey(unsigned ix, unsigned iy, unsigned iz)
@@ -224,7 +230,7 @@ iSfc1DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, axis long_dimen
 
 //! @brief Key encode overload for Mixed Hilbert keys
 template<class KeyType>
-HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert1DMixed<KeyType>{}, KeyType>
+HOST_DEVICE_FUN inline std::enable_if_t<IsHilbert2DMixed<KeyType>{}, KeyType>
 iSfc2DMixedKey(unsigned ix, unsigned iy, unsigned iz, int level, axis short_dimension)
 {
     return KeyType{iHilbert2DMixed<typename KeyType::ValueType>(ix, iy, iz, level, short_dimension)};
@@ -251,43 +257,59 @@ HOST_DEVICE_FUN inline KeyType sfc3D(T x, T y, T z, T xmin, T ymin, T zmin, T mx
 }
 
 template<class KeyType, class T>
-HOST_DEVICE_FUN inline KeyType sfc1D3D(T x, T y, T z, T xmin, T ymin, T zmin, T mx, T my, T mz, int levels_1D)
+HOST_DEVICE_FUN inline KeyType
+sfc1D3D(T x, T y, T z, T xmin, T ymin, T zmin, T mx, T my, T mz, int levels_1D, axis long_dimension)
 {
-    constexpr int mcoord = (1u << maxTreeLevel<typename KeyType::ValueType>{}) - 1;
+    constexpr int mcoord_long = (1u << maxTreeLevel<typename KeyType::ValueType>{}) - 1;
+    int mcoord_short          = (1u << (maxTreeLevel<typename KeyType::ValueType>{} - levels_1D)) - 1;
 
     int ix = std::floor(x * mx) - xmin * mx;
     int iy = std::floor(y * my) - ymin * my;
     int iz = std::floor(z * mz) - zmin * mz;
 
-    ix = stl::min(ix, mcoord);
-    iy = stl::min(iy, mcoord);
-    iz = stl::min(iz, mcoord);
+    const auto max_coordinate = [&](axis dimension)
+    {
+        if (dimension == long_dimension) return mcoord_long;
+        return mcoord_short;
+    };
+
+    ix = stl::min(ix, max_coordinate(axis::x));
+    iy = stl::min(iy, max_coordinate(axis::y));
+    iz = stl::min(iz, max_coordinate(axis::z));
 
     assert(ix >= 0);
     assert(iy >= 0);
     assert(iz >= 0);
 
-    return iSfc1DMixedKey<KeyType>(ix, iy, iz, levels_1D, axis::x);
+    return iSfc1DMixedKey<KeyType>(ix, iy, iz, levels_1D, long_dimension);
 }
 
 template<class KeyType, class T>
-HOST_DEVICE_FUN inline KeyType sfc2D3D(T x, T y, T z, T xmin, T ymin, T zmin, T mx, T my, T mz, int levels_2D)
+HOST_DEVICE_FUN inline KeyType
+sfc2D3D(T x, T y, T z, T xmin, T ymin, T zmin, T mx, T my, T mz, int levels_2D, axis short_dimension)
 {
-    constexpr int mcoord = (1u << maxTreeLevel<typename KeyType::ValueType>{}) - 1;
+    constexpr int mcoord_long = (1u << maxTreeLevel<typename KeyType::ValueType>{}) - 1;
+    int mcoord_short          = (1u << (maxTreeLevel<typename KeyType::ValueType>{} - levels_2D)) - 1;
 
     int ix = std::floor(x * mx) - xmin * mx;
     int iy = std::floor(y * my) - ymin * my;
     int iz = std::floor(z * mz) - zmin * mz;
 
-    ix = stl::min(ix, mcoord);
-    iy = stl::min(iy, mcoord);
-    iz = stl::min(iz, mcoord);
+    const auto max_coordinate = [&](axis dimension)
+    {
+        if (dimension == short_dimension) return mcoord_short;
+        return mcoord_long;
+    };
+
+    ix = stl::min(ix, max_coordinate(axis::x));
+    iy = stl::min(iy, max_coordinate(axis::y));
+    iz = stl::min(iz, max_coordinate(axis::z));
 
     assert(ix >= 0);
     assert(iy >= 0);
     assert(iz >= 0);
 
-    return iSfc2DMixedKey<KeyType>(ix, iy, iz, levels_2D, axis::x);
+    return iSfc2DMixedKey<KeyType>(ix, iy, iz, levels_2D, short_dimension);
 }
 
 /*! @brief Calculates a Hilbert key for a 3D point within the specified box
@@ -324,8 +346,11 @@ HOST_DEVICE_FUN inline KeyType sfc1D3D(T x, T y, T z, const Box<T>& box, int lev
 {
     constexpr unsigned cubeLength = (1u << maxTreeLevel<typename KeyType::ValueType>{});
 
+    /// TODO: based on the box dimensions select the long_dimension
+    const axis long_dimension = axis::x;
+
     return sfc1D3D<KeyType>(x, y, z, box.xmin(), box.ymin(), box.zmin(), cubeLength * box.ilx(), cubeLength * box.ily(),
-                            cubeLength * box.ilz(), levels_1D);
+                            cubeLength * box.ilz(), levels_1D, long_dimension);
 }
 
 template<class KeyType, class T>
@@ -333,8 +358,11 @@ HOST_DEVICE_FUN inline KeyType sfc2D3D(T x, T y, T z, const Box<T>& box, int lev
 {
     constexpr unsigned cubeLength = (1u << maxTreeLevel<typename KeyType::ValueType>{});
 
+    /// TODO: based on the box dimensions select the short_dimension
+    const axis short_dimension = axis::x;
+
     return sfc2D3D<KeyType>(x, y, z, box.xmin(), box.ymin(), box.zmin(), cubeLength * box.ilx(), cubeLength * box.ily(),
-                            cubeLength * box.ilz(), levels_2D);
+                            cubeLength * box.ilz(), levels_2D, short_dimension);
 }
 
 //! @brief decode a Morton key
