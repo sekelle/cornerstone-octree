@@ -111,6 +111,59 @@ iHilbert(unsigned px, unsigned py, unsigned pz) noexcept
 /*! @brief compute the Hilbert key for a 3D point of integer coordinates
  *
  * @tparam     KeyType   32- or 64-bit unsigned integer
+ * @param[in]  px        input x integer coordinate, in [0:2^bx]
+ * @param[in]  py        input y integer coordinate, in [0:2^by]
+ * @param[in]  pz        input z integer coordinate, in [0:2^bz]
+ * @param[in]  bx        number of bits to encode in x dimension, in [0:maxTreelevel<KeyType>{}]
+ * @param[in]  by        number of bits to encode in y dimension, in [0:maxTreelevel<KeyType>{}]
+ * @param[in]  bz        number of bits to encode in z dimension, in [0:maxTreelevel<KeyType>{}]
+ * @return               the Hilbert key
+ *
+ * Example box with (Lx, Ly, Lz) = (8,4,1):
+ *  The longest dimension will get the max number of bits per dimension maxTreelevel<KeyType>{},
+ *  i.e 10 bits if KeyType is 32-bit. The bits in the other dimensions are reduced by 1 for each
+ *  factor of 2 that the box is shorter in that dimension than the longest. For the example box,
+ *  (bx, by, bz) will be (10, 9, 7)
+ */
+template<class KeyType>
+constexpr HOST_DEVICE_FUN inline std::enable_if_t<std::is_unsigned_v<KeyType>, KeyType>
+iHilbertMixD(unsigned px, unsigned py, unsigned pz, unsigned bx, unsigned by, unsigned bz) noexcept
+{
+    assert(px < (1u << bx));
+    assert(py < (1u << by));
+    assert(pz < (1u << bz));
+    assert(bx < maxTreeLevel<KeyType>{} && by < maxTreeLevel<KeyType>{} && bz < maxTreeLevel<KeyType>{});
+
+    KeyType key = 0;
+
+    unsigned bits[3] = { /* bits (bx,by,bz) sorted in descending order */ };
+
+    if (bits[0] > bits[1]) // 1 dim has more bits than the other 2 dims, add 1D levels
+    {
+        int n = bits[0] - bits[1]
+        // add n 1D levels and add to key (trivial)
+        bits[0] -= n;
+        // now we have bits[0] == bits[1]
+    }
+    if (bits[1] > bits[2]) // 2 dims have more bits than the 3rd, add 2D levels
+    {
+        int n = bits[1] - bits[2];
+        // encode n 2D levels with 2D-Hilbert and add to key
+        bits[0] -= n;
+        bits[1] -= n; 
+        // now we have bits[0] == bits[1] == bits[2]
+    }
+
+    // encode remaining bits[0] == min(bx,by,bz) 3D levels or octal digits with 3D-Hilbert and add to key
+
+    // Example for (bx,by,bz) = (10,9,7): 1D,2D,2D,3D*7
+
+    return key;
+}
+
+/*! @brief compute the Hilbert key for a 3D point of integer coordinates
+ *
+ * @tparam     KeyType   32- or 64-bit unsigned integer
  * @param[in]  px,py,pz  input coordinates in [0:2^maxTreeLevel<KeyType>{}]
  * @return               the Hilbert key
  */

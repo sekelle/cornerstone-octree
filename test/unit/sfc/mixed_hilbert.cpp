@@ -4,6 +4,24 @@
 
 using namespace cstone;
 
+TEST(MixedHilbertBox, x10y9z9)
+{
+    unsigned bx = 10, by = 9, bz = 9;
+
+    // iHilbertMixD(px in [0:512], py, pz, bx, by, bz)    == iHilbert(px, py, pz) >> 3
+    // iHilbertMixD(px in [512:1024], py, pz, bx, by, bz) == 01000000000 (=8^9) + (iHilbert3d(px - 512, py, pz) >> 3)
+}
+
+TEST(MixedHilbertBox, x10y10z9)
+{
+    unsigned bx = 10, by = 10, bz = 9;
+
+    // iHilbertMixD(px in [0:512], py in [0:512], pz, bx, by, bz)       == iHilbert(px, py, pz) >> 3
+    // iHilbertMixD(px in [0:512], py in [512:1024], pz, bx, by, bz)    == 01000000000 (=8^9) + (iHilbert(px, py - 512, pz) >> 3)
+    // iHilbertMixD(px in [512:1024], py in [512:1024], pz, bx, by, bz) == 02000000000 (=8^9) + (iHilbert(px - 512, py - 512, pz) >> 3)
+    // iHilbertMixD(px in [0:512], py in [512:1024], pz, bx, by, bz)    == 03000000000 (=8^9) + (iHilbert(px, py - 512, pz) >> 3)
+}
+
 TEST(MixedHilbertBox, Long1DDomain)
 {
     using real        = double;
