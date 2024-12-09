@@ -205,8 +205,6 @@ __device__ __forceinline__ GpuConfig::ThreadMask lanemask_le()
  */
 __device__ __forceinline__ int inclusiveSegscan(int value, int distance)
 {
-    // distance should be less-equal the lane index
-    assert(distance <= (threadIdx.x & (GpuConfig::warpSize - 1)));
 #pragma unroll
     for (int i = 1; i < GpuConfig::warpSize; i *= 2)
     {
@@ -242,7 +240,6 @@ __device__ __forceinline__ int inclusiveSegscanInt(const int packedValue, const 
     // distance = number of preceding lanes to include in scanned value
     // e.g. if distance = 0, then no preceding lane value will be added to scannedValue
     int distance = countLeadingZeros(flags & lanemask_le()) + laneIdx - (GpuConfig::warpSize - 1);
-    assert(distance >= 0);
     int scannedValue = inclusiveSegscan(value, imin(distance, laneIdx));
 
     // the lowest lane index for which packedValue was negative, warpSize if all were positive
@@ -297,6 +294,15 @@ __device__ __forceinline__ int spreadSeg8(int val)
 {
     int laneIdx = int(threadIdx.x) & (GpuConfig::warpSize - 1);
     return shflSync(val, laneIdx >> 3) + (laneIdx & 7);
+}
+
+__device__ __forceinline__ float atomicMinFloat(float* addr, float value)
+{
+    float old;
+    old = (value >= 0) ? __int_as_float(atomicMin((int*)addr, __float_as_int(value)))
+                       : __uint_as_float(atomicMax((unsigned int*)addr, __float_as_uint(value)));
+
+    return old;
 }
 
 } // namespace cstone
