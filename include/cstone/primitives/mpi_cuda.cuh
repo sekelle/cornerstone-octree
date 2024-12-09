@@ -32,13 +32,12 @@
 #pragma once
 
 #include <vector>
-#include <cuda_runtime.h>
 
 #include "cstone/primitives/mpi_wrappers.hpp"
 #include "cstone/util/noinit_alloc.hpp"
 #include "cstone/cuda/errorcheck.cuh"
 
-#ifdef USE_GPU_DIRECT
+#ifdef CSTONE_HAVE_GPU_AWARE_MPI
 constexpr inline bool useGpuDirect = true;
 #else
 constexpr inline bool useGpuDirect = false;
