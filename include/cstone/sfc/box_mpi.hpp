@@ -27,6 +27,7 @@
  * @brief compute global minima and maxima of array ranges
  *
  * @author Sebastian Keller <sebastian.f.keller@gmail.com>
+ * @author Noah Kubli <noah.kubli@uzh.ch>
  *
  */
 
@@ -69,7 +70,7 @@ struct MinMax
 
 /*! @brief compute global bounding box for local x,y,z arrays
  *
- * @tparam     T             float or double
+ * @tparam     T            float or double
  * @param[in]  x            x coordinate array start
  * @param[in]  y            y coordinate array start
  * @param[in]  z            z coordinate array start
