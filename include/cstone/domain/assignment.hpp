@@ -113,9 +113,10 @@ public:
 
         auto maxCount = updateOctreeGlobal<KeyType>(keyView, bucketSize_, tree_, leaves_, d_csTree_, nodeCounts_,
                                                     d_nodeCounts_, false);
-        if (firstCall_ || maxCount >= 8 * bucketSize_)
+        if (forceConverge_ || firstCall_ || maxCount >= 8 * bucketSize_)
         {
-            firstCall_ = false;
+            firstCall_     = false;
+            forceConverge_ = false;
             while (updateOctreeGlobal<KeyType>(keyView, bucketSize_, tree_, leaves_, d_csTree_, nodeCounts_,
                                                d_nodeCounts_, true) > bucketSize_)
                 ;
@@ -252,6 +253,12 @@ public:
     //! @brief number of particles assigned to local subdomain
     LocalIndex numAssigned() const { return assignment_.totalCount(myRank_); }
 
+    //! @brief Make the next assign() run the converge loop on the global tree.
+    //! Leaves firstCall_ alone, so the bounding box is not re-fit and stays
+    //! monotonic via limitBoxShrinking. Used when the particle count has
+    //! changed discontinuously between syncs (AMR refine).
+    void resetForAMRRefinement() { forceConverge_ = true; }
+
 private:
     int myRank_;
     int numRanks_;
@@ -277,6 +284,7 @@ private:
     AccVector<KeyType> d_csTree_;
 
     bool firstCall_{true};
+    bool forceConverge_{false};
     double growthRate_{1.05};
 };
 

@@ -752,6 +752,45 @@ private:
     std::vector<KeyType> hostPrefixes_;
     OctreeData<KeyType, Accelerator> octreeAcc_;
 
+public:
+    //! @brief Reset focus tree state to its just-constructed configuration.
+    //! Use this between sync() calls when the particle count has changed
+    //! discontinuously (e.g. AMR refine). Without it, updateTree() would
+    //! reuse the old leaves and leaf counts as a starting point, which
+    //! gives wrong refinement decisions when the count jumps by 8x.
+    //! Experimental: not yet bit-exact against firstCall_ converge.
+    void resetFocusRangeForNewDistribution()
+    {
+        prevFocusStart   = 0;
+        prevFocusEnd     = 0;
+        rebalanceStatus_ = valid;
+
+        leaves_.clear();
+        leaves_.push_back(0);
+        leaves_.push_back(nodeRange<KeyType>(0));
+
+        leafCountsAcc_ = std::vector<unsigned>{bucketSize_ + 1};
+        countsAcc_     = leafCountsAcc_;
+
+        octreeAcc_.resize(1);
+
+        if constexpr (HaveGpu<Accelerator>{})
+        {
+            leavesAcc_ = leaves_;
+            buildOctreeGpu(rawPtr(leavesAcc_), octreeAcc_.data());
+            reallocate(geoCentersAcc_, 1, 1.0);
+        }
+        else
+        {
+            updateInternalTree<KeyType>(leaves_, octreeAcc_.data());
+        }
+
+        macsAcc_    = AccVector<uint8_t>(1, 1);
+        centersAcc_ = AccVector<SourceCenterType<RealType>>(1);
+    }
+
+private:
+
     //! @brief leaves in cstone format for tree_
     std::vector<KeyType> leaves_;
     AccVector<KeyType> leavesAcc_;

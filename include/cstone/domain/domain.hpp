@@ -342,6 +342,24 @@ public:
     [[nodiscard]] LocalIndex endIndex() const { return bufDesc_.end; }
     //! @brief set the index of the lsat particle (used to increase the number of particles)
     void setEndIndex(const size_t i) { bufDesc_.end = i; }
+
+    //! @brief Prepare the Domain for a sync() with a different particle count
+    //! (AMR refine). Resets bufDesc / prevBufDesc / layout to the new count
+    //! and asks both the global and focus trees to re-converge on the next
+    //! sync. Experimental: not bit-exact against the firstCall_ path yet.
+    void resetForAMRRefinement(LocalIndex newCount)
+    {
+        bufDesc_.start = 0;
+        bufDesc_.end   = newCount;
+        bufDesc_.size  = newCount;
+        prevBufDesc_   = bufDesc_;
+        layout_.clear();
+        layout_.push_back(0);
+        layout_.push_back(newCount);
+        global_.resetForAMRRefinement();
+        focusTree_.resetFocusRangeForNewDistribution();
+    }
+
     //! @brief return number of locally assigned particles
     [[nodiscard]] LocalIndex nParticles() const { return endIndex() - startIndex(); }
     //! @brief return number of locally assigned particles plus number of halos
