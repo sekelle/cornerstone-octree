@@ -330,6 +330,12 @@ public:
         this->halos_.exchangeHalos(arrays, sendBuffer, receiveBuffer);
     }
 
+    //! @brief Read-only access to halo bookkeeping (forwarded from Halos).
+    //! incomingHaloIndices()[rank] = particle index range received from rank.
+    //! outgoingHaloIndices()[rank] = particle index ranges sent to rank.
+    const auto& incomingHaloIndices() const { return halos_.incomingHaloIndices(); }
+    const auto& outgoingHaloIndices() const { return halos_.outgoingHaloIndices(); }
+
     //! @brief return the index of the first particle that's part of the local assignment
     [[nodiscard]] LocalIndex startIndex() const { return bufDesc_.start; }
     //! @brief return one past the index of the last particle that's part of the local assignment

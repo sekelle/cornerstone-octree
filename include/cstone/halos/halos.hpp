@@ -103,6 +103,13 @@ public:
         }
     }
 
+    //! @brief Read-only access to the halo index lists (one entry per rank).
+    //! incomingHaloIndices_[rank] is the contiguous particle index range
+    //! received from that rank. outgoingHaloIndices_[rank] holds the index
+    //! ranges of locally-owned particles sent to that rank.
+    const RecvList& incomingHaloIndices() const { return incomingHaloIndices_; }
+    const SendList& outgoingHaloIndices() const { return outgoingHaloIndices_; }
+
 private:
     int myRank_;
 
