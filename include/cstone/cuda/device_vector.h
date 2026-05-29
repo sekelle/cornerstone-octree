@@ -39,6 +39,8 @@ public:
     DeviceVector(std::size_t);
     DeviceVector(std::size_t, T init);
     DeviceVector(const DeviceVector&);
+    //! @brief move ctor; cheap pointer swap, no device traffic
+    DeviceVector(DeviceVector&&) noexcept;
     //! @brief upload from host vecotr
     DeviceVector(const std::vector<T>&);
     //! @brief upload from host pointers
@@ -67,6 +69,7 @@ public:
     DeviceVector& swap(DeviceVector<T>& rhs);
     DeviceVector& operator=(const std::vector<T>& rhs);
     DeviceVector& operator=(DeviceVector<T> rhs);
+    DeviceVector& operator=(DeviceVector&&) noexcept;
 
 private:
     friend void swap(DeviceVector& lhs, DeviceVector& rhs) { lhs.swap(rhs); }

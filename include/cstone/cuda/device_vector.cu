@@ -83,6 +83,12 @@ DeviceVector<T>::DeviceVector(const DeviceVector<T>& other)
 }
 
 template<class T>
+DeviceVector<T>::DeviceVector(DeviceVector<T>&&) noexcept = default;
+
+template<class T>
+DeviceVector<T>& DeviceVector<T>::operator=(DeviceVector<T>&&) noexcept = default;
+
+template<class T>
 DeviceVector<T>::DeviceVector(const std::vector<T>& rhs)
     : impl_(new Impl())
 {
