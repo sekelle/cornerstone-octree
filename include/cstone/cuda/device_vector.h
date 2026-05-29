@@ -68,8 +68,11 @@ public:
 
     DeviceVector& swap(DeviceVector<T>& rhs);
     DeviceVector& operator=(const std::vector<T>& rhs);
+    //! @brief copy-and-swap; the by-value parameter is move-constructed when
+    //! the argument is an rvalue, so this single operator handles both copy
+    //! and move assignment. Do NOT add a separate operator=(DeviceVector&&) —
+    //! it would be ambiguous with this one.
     DeviceVector& operator=(DeviceVector<T> rhs);
-    DeviceVector& operator=(DeviceVector&&) noexcept;
 
 private:
     friend void swap(DeviceVector& lhs, DeviceVector& rhs) { lhs.swap(rhs); }
