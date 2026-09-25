@@ -330,6 +330,74 @@ public:
         this->halos_.exchangeHalos(arrays, sendBuffer, receiveBuffer);
     }
 
+    /*! @brief Add the focus tree cells that contain @p haloKeys to the halos of the previous sync call
+     *
+     * @param[in]    haloKeys            SFC keys of particles that the executing rank needs as halos,
+     *                                   on the accelerator. Keys in the local assignment are ignored.
+     * @param[inout] particleKeys        arguments of the previous sync call
+     * @param[inout] x
+     * @param[inout] y
+     * @param[inout] z
+     * @param[inout] h
+     * @param[inout] particleProperties
+     * @param[-]     scratchBuffers      at least two buffers
+     *
+     * Use this when halo requirements are known from data other than distance, e.g. mesh connectivity.
+     * Every rank must call it, also with no keys. Particles are not redistributed and the assignment does not
+     * change: the assigned particles move to their new offset startIndex() and all halos are exchanged again.
+     * The postconditions are those of sync(), so particleProperties need exchangeHalos() to fill their halos.
+     */
+    template<class KeyVec, class VectorX, class VectorH, class... Vectors1, class... Vectors2>
+    void addHalos(std::span<const KeyType> haloKeys,
+                  KeyVec& particleKeys,
+                  VectorX& x,
+                  VectorX& y,
+                  VectorX& z,
+                  VectorH& h,
+                  std::tuple<Vectors1&...> particleProperties,
+                  std::tuple<Vectors2&...> scratchBuffers)
+    {
+        static_assert(sizeof...(Vectors2) >= 2, "addHalos needs two scratch buffers");
+        auto arrays = std::tuple_cat(std::tie(particleKeys, x, y, z, h), particleProperties);
+        std::apply([this](auto&... a) { this->checkSizesEqual(this->bufDesc_.size, a...); }, arrays);
+
+        focusTree_.addHaloKeys(haloKeys);
+        int fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_) != 0;
+        MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+        if (fail) { throw std::runtime_error("Domain::addHalos: requested halo cells are invalid\n"); }
+        if constexpr (!HaveGpu<Accelerator>{}) { layoutAcc_ = layout_; }
+
+        halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
+
+        auto myRange = focusTree_.assignment()[myRank_];
+        BufferDescription newBufDesc{layout_[myRange.start()], layout_[myRange.end()], layout_.back()};
+        LocalIndex numAssigned = bufDesc_.end - bufDesc_.start;
+        if (newBufDesc.end - newBufDesc.start != numAssigned)
+        {
+            throw std::runtime_error("Domain::addHalos: assigned particle count changed\n");
+        }
+
+        // Halo counts in front of the assignment can grow, so the assigned block moves to a higher offset
+        // that may overlap its old position. Stage it through scratch to avoid an overlapping copy.
+        auto& tmp     = std::get<0>(scratchBuffers);
+        auto relocate = [&, oldStart = bufDesc_.start](auto& array)
+        {
+            using Vector       = std::decay_t<decltype(array)>;
+            using V            = typename Vector::value_type;
+            constexpr bool gpu = IsDeviceVector<Vector>{};
+            size_t origSize    = reallocateBytes(tmp, numAssigned * sizeof(V), allocGrowthRate_);
+            auto* tmpPtr       = reinterpret_cast<V*>(rawPtr(tmp));
+            copy_n<gpu>(rawPtr(array) + oldStart, numAssigned, tmpPtr);
+            reallocate(array, newBufDesc.size, allocGrowthRate_);
+            copy_n<gpu>(tmpPtr, numAssigned, rawPtr(array) + newBufDesc.start);
+            reallocate(tmp, origSize, 1.0);
+        };
+        util::for_each_tuple(relocate, arrays);
+
+        bufDesc_ = newBufDesc;
+        setupHalos(particleKeys, x, y, z, h, scratchBuffers);
+    }
+
     //! @brief Read-only access to halo bookkeeping (forwarded from Halos).
     //! incomingHaloIndices()[rank] = particle index range received from rank.
     //! outgoingHaloIndices()[rank] = particle index ranges sent to rank.
@@ -378,6 +446,8 @@ public:
     const Box<T>& box() const { return global_.box(); }
 
     KeyType assignmentStart() const { return global_.assignment()[myRank_]; }
+    //! @brief SFC key ranges of all ranks from the previous sync call, identical on every rank
+    const SfcAssignment<KeyType>& assignment() const { return global_.assignment(); }
 
     void setTreeConv(bool flag) { convergeTrees = flag; }
     void setHaloFactor(float factor) { haloSearchExt_ = factor; }

@@ -568,6 +568,38 @@ public:
         reallocate(scratch, origSize, 1.0);
     }
 
+    /*! @brief flag the leaves that contain @p keys as halos, in addition to the flags set by discoverHalos
+     *
+     * @param[in] keys  SFC keys on the accelerator. Keys inside the executing rank's assignment are ignored.
+     *
+     * Call after discoverHalos() on the same tree, followed by computeLayout().
+     */
+    void addHaloKeys(std::span<const KeyType> keys)
+    {
+        TreeNodeIndex firstNode = assignment_[myRank_].start();
+        TreeNodeIndex lastNode  = assignment_[myRank_].end();
+        auto toInternal         = leafToInternal(octreeAcc_);
+
+        if (TreeNodeIndex(macsAcc_.size()) != octreeAcc_.numNodes)
+        {
+            throw std::runtime_error("addHaloKeys: halo flags not correctly allocated\n");
+        }
+
+        if constexpr (HaveGpu<Accelerator>{})
+        {
+            markHaloKeysGpu(rawPtr(leavesAcc_), octreeAcc_.numLeafNodes, toInternal.data(), firstNode, lastNode,
+                            keys.data(), keys.size(), rawPtr(macsAcc_));
+        }
+        else
+        {
+            for (KeyType key : keys)
+            {
+                TreeNodeIndex leafIdx = findNodeBelow(leaves_.data(), nNodes(leaves_), key);
+                if (leafIdx < firstNode || leafIdx >= lastNode) { macsAcc_[toInternal[leafIdx]] = 1; }
+            }
+        }
+    }
+
     int computeLayout(std::span<LocalIndex> layoutAcc, std::span<LocalIndex> layout) const
     {
         computeNodeLayout<useGpu>({leafCountsAcc_.data(), leafCountsAcc().size()}, {macsAcc_.data(), macsAcc_.size()},

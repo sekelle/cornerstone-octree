@@ -16,6 +16,7 @@
 #include "cstone/primitives/math.hpp"
 #include "cstone/traversal/collisions_gpu.h"
 #include "cstone/traversal/macs.hpp"
+#include "cstone/tree/csarray.hpp"
 
 namespace cstone
 {
@@ -84,6 +85,46 @@ void findHalosGpu(const KeyType* prefixes,
 FIND_HALOS_GPU(uint32_t, float);
 FIND_HALOS_GPU(uint64_t, float);
 FIND_HALOS_GPU(uint64_t, double);
+
+template<class KeyType>
+__global__ void markHaloKeysKernel(const KeyType* leaves,
+                                   TreeNodeIndex numLeaves,
+                                   const TreeNodeIndex* leafToInternal,
+                                   TreeNodeIndex firstNode,
+                                   TreeNodeIndex lastNode,
+                                   const KeyType* keys,
+                                   size_t numKeys,
+                                   uint8_t* collisionFlags)
+{
+    size_t tid = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
+    if (tid >= numKeys) { return; }
+
+    TreeNodeIndex leafIdx = findNodeBelow(leaves, numLeaves, keys[tid]);
+    if (leafIdx < firstNode || leafIdx >= lastNode) { collisionFlags[leafToInternal[leafIdx]] = 1; }
+}
+
+template<class KeyType>
+void markHaloKeysGpu(const KeyType* leaves,
+                     TreeNodeIndex numLeaves,
+                     const TreeNodeIndex* leafToInternal,
+                     TreeNodeIndex firstNode,
+                     TreeNodeIndex lastNode,
+                     const KeyType* keys,
+                     size_t numKeys,
+                     uint8_t* collisionFlags)
+{
+    constexpr unsigned numThreads = 128;
+    unsigned numBlocks            = iceil(numKeys, numThreads);
+
+    if (numBlocks == 0) { return; }
+    markHaloKeysKernel<<<numBlocks, numThreads>>>(leaves, numLeaves, leafToInternal, firstNode, lastNode, keys,
+                                                  numKeys, collisionFlags);
+}
+
+template void markHaloKeysGpu(const uint32_t*, TreeNodeIndex, const TreeNodeIndex*, TreeNodeIndex, TreeNodeIndex,
+                              const uint32_t*, size_t, uint8_t*);
+template void markHaloKeysGpu(const uint64_t*, TreeNodeIndex, const TreeNodeIndex*, TreeNodeIndex, TreeNodeIndex,
+                              const uint64_t*, size_t, uint8_t*);
 
 template<class T, class KeyType>
 __global__ void markMacsGpuKernel(const KeyType* prefixes,
