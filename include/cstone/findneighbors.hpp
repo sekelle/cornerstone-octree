@@ -15,16 +15,42 @@
 
 #pragma once
 
+#include <type_traits>
 #include <cmath>
 
 #include "cstone/focus/source_center.hpp"
-#include "cstone/sfc/sfc.hpp"
 #include "cstone/traversal/traversal.hpp"
 #include "cstone/tree/definitions.h"
-#include "cstone/util/array.hpp"
 
 namespace cstone
 {
+
+template<class T>
+constexpr std::remove_cvref_t<std::remove_pointer_t<T>> loadAtIndexIfPtr(T ptrOrValue, LocalIndex index)
+{
+    if constexpr (std::is_pointer_v<T>)
+        return ptrOrValue[index];
+    else
+        return ptrOrValue;
+}
+
+/*! @brief Turns h values into an invalid signalling value used to indicate unconverged neighbor searches
+ *
+ * Current choice of infinity is transparent to timesteps and SPH kernels, but must be converted to zero in overlaps
+ * and neighbor searches.
+ */
+template<class T>
+constexpr T invalidateH(T /*value*/)
+{
+    return std::numeric_limits<T>::infinity();
+}
+
+//! @brief Return 0 if @p value is invalid according to invalidateH, unmodified @p value otherwise
+template<class T>
+constexpr T invalidHToZero(T value)
+{
+    return value == invalidateH(value) ? 0 : value;
+}
 
 /*! @brief compute squared distance, taking PBC into account
  *
@@ -74,21 +100,23 @@ HOST_DEVICE_FUN constexpr T distanceSq(T x1, T y1, T z1, T x2, T y2, T z2, const
  * @param[out] neighbors       output to store the neighbors
  * @return                     neighbor count of particle @p i, does not include self-reference; min return val is 0.
  */
-template<class Tc, class Th, class KeyType>
+template<class Tc, class ThP, class KeyType>
 HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
                                        const Tc* x,
                                        const Tc* y,
                                        const Tc* z,
-                                       const Th* h,
+                                       const ThP h,
                                        const OctreeNsView<Tc, KeyType>& tree,
                                        const Box<Tc>& box,
                                        unsigned ngmax,
-                                       LocalIndex* neighbors)
+                                       LocalIndex* neighbors         = nullptr,
+                                       unsigned long neighborsStride = 1)
 {
-    auto xi = x[i];
-    auto yi = y[i];
-    auto zi = z[i];
-    auto hi = h[i];
+    using Th = std::remove_cvref_t<std::remove_pointer_t<ThP>>;
+    Tc xi    = x[i];
+    Tc yi    = y[i];
+    Tc zi    = z[i];
+    Th hi    = invalidHToZero(loadAtIndexIfPtr(h, i));
 
     auto radiusSq     = Th(4.0) * hi * hi;
     auto cellRadiusSq = radiusSq * tree.searchExtFactor * tree.searchExtFactor;
@@ -100,13 +128,19 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
     bool usePbc = anyPbc && !insideBox(particle, {Tc(2) * hi, Tc(2) * hi, Tc(2) * hi}, box);
 
     auto overlapsPbc = [particle, cellRadiusSq, centers = tree.centers, sizes = tree.sizes, &box](TreeNodeIndex idx)
-    { return norm2(minDistance(particle, centers[idx], sizes[idx], box)) < cellRadiusSq; };
+    {
+        if (sizes[idx][0] == 0 && sizes[idx][1] == 0 && sizes[idx][2] == 0) return false;
+        return norm2(minDistance(particle, centers[idx], sizes[idx], box)) < cellRadiusSq;
+    };
 
     auto overlaps = [particle, cellRadiusSq, centers = tree.centers, sizes = tree.sizes](TreeNodeIndex idx)
-    { return norm2(minDistance(particle, centers[idx], sizes[idx])) < cellRadiusSq; };
+    {
+        if (sizes[idx][0] == 0 && sizes[idx][1] == 0 && sizes[idx][2] == 0) return false;
+        return norm2(minDistance(particle, centers[idx], sizes[idx])) < cellRadiusSq;
+    };
 
-    auto searchBoxPbc =
-        [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors, &box](TreeNodeIndex idx)
+    auto searchBoxPbc = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, neighborsStride, &numNeighbors,
+                         &box](TreeNodeIndex idx)
     {
         TreeNodeIndex leafIdx    = tree.internalToLeaf[idx];
         LocalIndex firstParticle = tree.layout[leafIdx];
@@ -117,13 +151,14 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
             if (j == i) { continue; }
             if (distanceSq<true>(x[j], y[j], z[j], particle[0], particle[1], particle[2], box) < radiusSq)
             {
-                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
+                if (neighbors && numNeighbors < ngmax) { neighbors[numNeighbors * neighborsStride] = j; }
                 numNeighbors++;
             }
         }
     };
 
-    auto searchBox = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, &numNeighbors, &box](TreeNodeIndex idx)
+    auto searchBox = [i, particle, radiusSq, &tree, x, y, z, ngmax, neighbors, neighborsStride, &numNeighbors,
+                      &box](TreeNodeIndex idx)
     {
         TreeNodeIndex leafIdx    = tree.internalToLeaf[idx];
         LocalIndex firstParticle = tree.layout[leafIdx];
@@ -134,7 +169,7 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
             if (j == i) { continue; }
             if (distanceSq<false>(x[j], y[j], z[j], particle[0], particle[1], particle[2], box) < radiusSq)
             {
-                if (numNeighbors < ngmax) { neighbors[numNeighbors] = j; }
+                if (neighbors && numNeighbors < ngmax) { neighbors[numNeighbors * neighborsStride] = j; }
                 numNeighbors++;
             }
         }
@@ -146,15 +181,15 @@ HOST_DEVICE_FUN unsigned findNeighbors(LocalIndex i,
     return numNeighbors;
 }
 
-template<class T, class KeyType>
-void findNeighbors(const T* x,
-                   const T* y,
-                   const T* z,
-                   const T* h,
+template<class Tc, class ThP, class KeyType>
+void findNeighbors(const Tc* x,
+                   const Tc* y,
+                   const Tc* z,
+                   const ThP h,
                    LocalIndex firstId,
                    LocalIndex lastId,
-                   const Box<T>& box,
-                   const OctreeNsView<T, KeyType>& treeView,
+                   const Box<Tc>& box,
+                   const OctreeNsView<Tc, KeyType>& treeView,
                    unsigned ngmax,
                    LocalIndex* neighbors,
                    unsigned* neighborsCount)

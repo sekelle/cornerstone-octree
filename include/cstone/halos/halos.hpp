@@ -21,6 +21,7 @@
 #include "cstone/domain/index_ranges.hpp"
 #include "cstone/halos/exchange_halos.hpp"
 #include "cstone/halos/halo_peers.hpp"
+#include "cstone/primitives/primitives_acc.hpp"
 #ifdef USE_CUDA
 #include "cstone/halos/exchange_halos_gpu.cuh"
 #endif
@@ -34,14 +35,17 @@ void haloExchangeGpu(int epoch,
                      const SendList& outgoingHalos,
                      DevVec1& sendScratchBuffer,
                      DevVec2& receiveScratchBuffer,
+                     MPI_Comm comm,
+                     execution::Gpu exec,
                      Arrays... arrays);
 
-template<class KeyType, class Accelerator>
+template<class KeyType>
 class Halos
 {
 public:
-    Halos(int myRank)
+    Halos(int myRank, MPI_Comm comm)
         : myRank_(myRank)
+        , comm_(comm)
     {
     }
 
@@ -62,9 +66,10 @@ public:
                           std::span<const LocalIndex> layout)
     {
         auto exteriorPeerFlags = haloPeers(myRank_, layout, assignment);
-        exchangePeers(exteriorPeerFlags, exteriorPeers_, interiorPeers_);
+        exchangePeers(exteriorPeerFlags, exteriorPeers_, interiorPeers_, comm_);
 
-        outgoingHaloIndices_ = exchangeRequestKeys<KeyType>(leaves, assignment, exteriorPeers_, interiorPeers_, layout);
+        outgoingHaloIndices_ =
+            exchangeRequestKeys<KeyType>(leaves, assignment, exteriorPeers_, interiorPeers_, layout, comm_);
 
         incomingHaloIndices_.resize(assignment.size());
         std::fill(incomingHaloIndices_.begin(), incomingHaloIndices_.end(), RecvList::value_type{0, 0});
@@ -82,25 +87,28 @@ public:
      * Note that if the ScratchVectors are on device, all arrays need to be on the device too.
      */
     template<class Scratch1, class Scratch2, class... Vectors>
-    void exchangeHalos(std::tuple<Vectors&...> arrays, Scratch1& sendBuffer, Scratch2& receiveBuffer) const
+    void exchangeHalos(execution::Cpu, std::tuple<Vectors&...> arrays, Scratch1&, Scratch2&) const
     {
-        if constexpr (HaveGpu<Accelerator>{})
-        {
-            static_assert(IsDeviceVector<Scratch1>{} && IsDeviceVector<Scratch2>{});
-            std::apply(
-                [this, &sendBuffer, &receiveBuffer](auto&... arrays)
-                {
-                    haloExchangeGpu(haloEpoch_++, incomingHaloIndices_, outgoingHaloIndices_, sendBuffer, receiveBuffer,
-                                    rawPtr(arrays)...);
-                },
-                arrays);
-        }
-        else
-        {
-            std::apply([this](auto&... arrays)
-                       { haloexchange(haloEpoch_++, incomingHaloIndices_, outgoingHaloIndices_, rawPtr(arrays)...); },
-                       arrays);
-        }
+        std::apply(
+            [this](auto&... arrays)
+            { haloexchange(haloEpoch_++, incomingHaloIndices_, outgoingHaloIndices_, comm_, rawPtr(arrays)...); },
+            arrays);
+    }
+
+    template<class Scratch1, class Scratch2, class... Vectors>
+    void exchangeHalos(execution::Gpu exec,
+                       std::tuple<Vectors&...> arrays,
+                       Scratch1& sendBuffer,
+                       Scratch2& receiveBuffer) const
+    {
+        static_assert(IsDeviceVector<Scratch1>{} && IsDeviceVector<Scratch2>{});
+        std::apply(
+            [this, &sendBuffer, &receiveBuffer, exec](auto&... arrays)
+            {
+                haloExchangeGpu(haloEpoch_++, incomingHaloIndices_, outgoingHaloIndices_, sendBuffer, receiveBuffer,
+                                comm_, exec, rawPtr(arrays)...);
+            },
+            arrays);
     }
 
     //! @brief Read-only access to the halo index lists (one entry per rank).
@@ -112,6 +120,7 @@ public:
 
 private:
     int myRank_;
+    MPI_Comm comm_;
 
     RecvList incomingHaloIndices_;
     SendList outgoingHaloIndices_;

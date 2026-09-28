@@ -22,6 +22,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/sequence.h>
 
+#include "cstone/cuda/stream_holder.cuh"
 #include "cstone/cuda/thrust_util.cuh"
 #include "cstone/primitives/math.hpp"
 #include "cstone/traversal/groups_gpu.cuh"
@@ -38,25 +39,31 @@ TEST(TargetGroups, t0)
 {
     LocalIndex groupSize = 8, first = 4, last = 34;
 
-    GroupData<GpuTag> groups;
-    computeFixedGroups(first, last, groupSize, groups);
+    StreamHolder stream;
+
+    GroupData<execution::Gpu> groups;
+    computeFixedGroups(stream.exec(), first, last, groupSize, groups);
+    stream.sync();
 
     std::vector<LocalIndex> hgroups = toHost(groups.data);
     std::vector<LocalIndex> ref{4, 12, 20, 28, 34};
     EXPECT_EQ(hgroups, ref);
 }
 
-__device__ constexpr util::array<int, 2> laneSeg(int idx, int warpSize_) { return {idx % warpSize, idx / warpSize_}; }
+__device__ constexpr util::array<unsigned, 2> laneSeg(unsigned idx, unsigned warpSize_)
+{
+    return {idx % warpSize, idx / warpSize_};
+}
 
 //! @brief test input setup for findSplits
-template<size_t N>
+template<std::size_t N>
 __global__ void findSplitTester(util::array<GpuConfig::ThreadMask, N>* splits)
 {
     using T          = double;
     unsigned laneIdx = threadIdx.x & (GpuConfig::warpSize - 1);
 
     util::array<Vec4<T>, N> pos;
-    for (int k = 0; k < N; ++k)
+    for (std::size_t k = 0; k < N; ++k)
     {
         T x    = T(laneIdx) + k * GpuConfig::warpSize;
         pos[k] = Vec4<T>{x, x, x, T(N * GpuConfig::warpSize)};
@@ -183,7 +190,7 @@ TEST(TargetGroups, makeSplits)
         SplitType splitMask = makeMask(0xFFFFFFFFu, 0x6FFFFFFFu);
 
         makeSplitTester<<<1, 1>>>(splitMask, rawPtr(splitLengths));
-        for (int i = 0; i < targetSize - 1; ++i)
+        for (std::size_t i = 0; i < targetSize - 1; ++i)
         {
             if (i == 60) { EXPECT_EQ(splitLengths[i], 2); }
             else { EXPECT_EQ(splitLengths[i], 1); }
@@ -194,7 +201,7 @@ TEST(TargetGroups, makeSplits)
         SplitType splitMask = makeMask(0xFFFFFFFF, 0x7FFFFFFF);
 
         makeSplitTester<<<1, 1>>>(splitMask, rawPtr(splitLengths));
-        for (int i = 0; i < targetSize - 1; ++i)
+        for (std::size_t i = 0; i < targetSize - 1; ++i)
         {
             EXPECT_EQ(splitLengths[i], 1);
         }
@@ -272,9 +279,12 @@ TEST(TargetGroups, groupVolumes)
         //                            because of distance ^    ^ because of interaction radius
         DeviceVector<LocalIndex> temp, groups;
 
+        StreamHolder stream;
+
         float tolFactor = std::sqrt(3.0) / distCrit * 1.01;
-        computeGroupSplits(first, last, rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h), rawPtr(d_leaves), nNodes(leaves),
-                           rawPtr(d_layout), box, groupSize, tolFactor, temp, groups);
+        computeGroupSplits(stream.exec(), first, last, rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h), rawPtr(d_leaves),
+                           nNodes(leaves), rawPtr(d_layout), box, groupSize, tolFactor, temp, groups);
+        stream.sync();
 
         std::vector<LocalIndex> h_groups = toHost(groups);
         std::vector<LocalIndex> ref{4, 6, 68, 75, 128};

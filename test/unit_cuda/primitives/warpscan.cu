@@ -418,8 +418,8 @@ struct WarpStreamCompact
     __device__ T operator()(T x) const
     {
         __shared__ T buffer[GpuConfig::warpSize * 3];
-        T* tmp            = buffer + GpuConfig::warpSize * (threadIdx.z / 2);
-        const int numKeep = streamCompact(&x, x <= 0, tmp);
+        T* tmp                 = buffer + GpuConfig::warpSize * (threadIdx.z / 2);
+        const unsigned numKeep = streamCompact(&x, x <= 0, tmp);
         return laneIndex() < numKeep ? x : T(42);
     }
 
@@ -487,5 +487,45 @@ TEST(WarpScan, atomicMaxFloat)
             d_value[0] = 42.0f * firstSign;
             applyAtomicMaxFloat<<<2, 128>>>(rawPtr(d_value), 37.5f * secondSign);
             EXPECT_EQ(float(d_value[0]), std::max(42.0f * firstSign, 37.5f * secondSign));
+        }
+}
+
+__global__ void applyAtomicMinDouble(double* addr, double value)
+{
+    const auto index = blockIdx.x * blockDim.x + threadIdx.x;
+    atomicMinDouble(addr, index == 137 ? value : 2025.0f);
+}
+
+TEST(WarpScan, atomicMinDouble)
+{
+    thrust::device_vector<double> d_value(1);
+
+    // check especially corner cases -0.0, 0.0
+    for (double firstSign : {-1.0, -0.0, 0.0, 1.0})
+        for (double secondSign : {-1.0, -0.0, 0.0, 1.0})
+        {
+            d_value[0] = 42.0 * firstSign;
+            applyAtomicMinDouble<<<2, 128>>>(rawPtr(d_value), 37.5 * secondSign);
+            EXPECT_EQ(double(d_value[0]), std::min(42.0 * firstSign, 37.5 * secondSign));
+        }
+}
+
+__global__ void applyAtomicMaxDouble(double* addr, double value)
+{
+    const auto index = blockIdx.x * blockDim.x + threadIdx.x;
+    atomicMaxDouble(addr, index == 137 ? value : -2025.0);
+}
+
+TEST(WarpScan, atomicMaxDouble)
+{
+    thrust::device_vector<double> d_value(1);
+
+    // check especially corner cases -0.0, 0.0
+    for (double firstSign : {1.0, -0.0, 0.0, 1.0})
+        for (double secondSign : {-1.0, -0.0, 0.0, 1.0})
+        {
+            d_value[0] = 42.0 * firstSign;
+            applyAtomicMaxDouble<<<2, 128>>>(rawPtr(d_value), 37.5 * secondSign);
+            EXPECT_EQ(double(d_value[0]), std::max(42.0 * firstSign, 37.5 * secondSign));
         }
 }

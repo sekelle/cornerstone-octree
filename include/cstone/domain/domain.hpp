@@ -35,14 +35,14 @@
 namespace cstone
 {
 
-template<class KeyType, class T, class Accelerator = CpuTag>
+template<class KeyType, class T, execution::Policy Exec = execution::Cpu>
 class Domain
 {
     static_assert(std::is_unsigned<KeyType>{}, "SFC key type needs to be an unsigned integer\n");
 
-    //! @brief A vector template that resides on the hardware specified as Accelerator
+    //! @brief A vector template that resides on the hardware specified as Exec
     template<class ValueType>
-    using AccVector = std::conditional_t<HaveGpu<Accelerator>{}, DeviceVector<ValueType>, std::vector<ValueType>>;
+    using AccVector = std::conditional_t<execution::HaveGpu<Exec>{}, DeviceVector<ValueType>, std::vector<ValueType>>;
 
 public:
     //! @brief floating point type used for the coordinate bounding box and geometric/mass centers of tree nodes
@@ -50,6 +50,7 @@ public:
 
     /*! @brief construct empty Domain
      *
+     * @param exec            execution policy, CPU or GPU stream
      * @param rank            executing rank
      * @param nRanks          number of ranks
      * @param bucketSize      build global tree for domain decomposition with max @a bucketSize particles per node
@@ -60,18 +61,23 @@ public:
      *                        limits will never be changed for the lifetime of the Domain
      *
      */
-    Domain(int rank,
+    Domain(Exec exec,
+           int rank,
            int nRanks,
            unsigned bucketSize,
            unsigned bucketSizeFocus,
            float theta,
+           MPI_Comm comm,
            const Box<T>& box = Box<T>{0, 1})
-        : myRank_(rank)
+        : exec_(exec)
+        , myRank_(rank)
         , numRanks_(nRanks)
         , bucketSizeFocus_(bucketSizeFocus)
         , theta_(theta)
-        , focusTree_(rank, numRanks_, bucketSizeFocus_)
-        , global_(rank, nRanks, bucketSize, box)
+        , comm_(comm)
+        , focusTree_(exec_, rank, numRanks_, bucketSizeFocus_, comm)
+        , global_(exec_, rank, nRanks, bucketSize, box, comm)
+        , halos_(myRank_, comm)
     {
         if (bucketSize < bucketSizeFocus_)
         {
@@ -179,7 +185,7 @@ public:
         auto [exchangeStart, keyView] =
             distribute(sorter, particleKeys, x, y, z, std::tuple_cat(std::tie(h), particleProperties), scratch);
         // x,y,z,h is already reordered here for use in halo discovery
-        gatherArrays({sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()}, 0,
+        gatherArrays(exec_, {sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()}, 0,
                      std::tie(x, y, z, h), util::reverse(scratch));
 
         float invThetaEff = invThetaMinMac(theta_);
@@ -200,7 +206,7 @@ public:
             focusTree_.discoverHalos(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h),
                                      {rawPtr(layoutAcc_), layoutAcc_.size()}, haloSearchExt_, get<0>(scratch), false);
             fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
-            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, comm_);
 
             halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
 
@@ -230,14 +236,14 @@ public:
 
         auto [exchangeStart, keyView] =
             distribute(sorter, particleKeys, x, y, z, std::tuple_cat(std::tie(h, m), particleProperties), scratch);
-        gatherArrays({sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()}, 0,
+        gatherArrays(exec_, {sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()}, 0,
                      std::tie(x, y, z, h, m), util::reverse(scratch));
 
         if (firstCall_)
         {
             // first rough convergence to avoid computing expansion centers of large nodes with a lot of particles
-            focusTree_.converge(box(), keyView, global_.assignment(), global_.treeLeaves(), global_.nodeCounts(),
-                                1.0, std::get<0>(scratch));
+            focusTree_.converge(box(), keyView, global_.assignment(), global_.treeLeaves(), global_.nodeCounts(), 1.0,
+                                std::get<0>(scratch));
             focusTree_.updateMinMac(global_.assignment(), 1.0, false);
             int converged = 0, reps = 0;
             while (converged != numRanks_ || reps < 2)
@@ -246,9 +252,9 @@ public:
                     focusTree_.updateTree(global_.assignment(), global_.treeLeaves(), box(), std::get<0>(scratch));
                 focusTree_.updateCounts(keyView, global_.treeLeaves(), global_.nodeCounts(), std::get<0>(scratch));
                 focusTree_.updateCenters(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(m), global_.octree(),
-                                         std::get<0>(scratch), std::get<1>(scratch));
+                                         std::get<0>(scratch));
                 focusTree_.updateMacs(global_.assignment(), 1.0 / theta_, false);
-                MPI_Allreduce(MPI_IN_PLACE, &converged, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+                MPI_Allreduce(MPI_IN_PLACE, &converged, 1, MPI_INT, MPI_SUM, comm_);
                 reps++;
             }
         }
@@ -259,15 +265,15 @@ public:
             focusTree_.updateMacs(global_.assignment(), centerDriftTol_ / theta_, true);
             focusTree_.updateTree(global_.assignment(), global_.treeLeaves(), box(), std::get<0>(scratch));
             focusTree_.updateCounts(keyView, global_.treeLeaves(), global_.nodeCounts(), std::get<0>(scratch));
-            focusTree_.updateCenters(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(m), global_.octree(), std::get<0>(scratch),
-                                     std::get<1>(scratch));
+            focusTree_.updateCenters(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(m), global_.octree(),
+                                     std::get<0>(scratch));
             focusTree_.updateMacs(global_.assignment(), 1.0 / theta_, false);
 
             reallocate(focusTree_.octreeViewAcc().numLeafNodes + 1, allocGrowthRate_, layout_, layoutAcc_);
             focusTree_.discoverHalos(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h),
                                      {rawPtr(layoutAcc_), layoutAcc_.size()}, haloSearchExt_, get<0>(scratch), true);
             fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
-            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, comm_);
 
             halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
 
@@ -306,11 +312,12 @@ public:
 
         auto* ord = reinterpret_cast<LocalIndex*>(rawPtr(ordering)) + envelope[0];
         std::vector<LocalIndex> orderingCpu;
-        if constexpr (HaveGpu<Accelerator>{})
+        if constexpr (execution::HaveGpu<Exec>{})
         {
             static_assert(IsDeviceVector<OVec>{}, "Need ordering on GPU for GPU-accelerated domain");
             orderingCpu.resize(envelope[1] - envelope[0]);
-            memcpyD2H(ord, orderingCpu.size(), orderingCpu.data());
+            memcpyD2HAsync(exec_, ord, orderingCpu.size(), orderingCpu.data());
+            syncGpu(exec_);
             ord = orderingCpu.data();
         }
 
@@ -318,7 +325,7 @@ public:
                    { global_.redoExchange(exDesc, ord, sendBuffer, receiveBuffer, rawPtr(a)...); }, arrays);
 
         lowMemReallocate(bufDesc_.size, allocGrowthRate_, arrays, std::tie(sendBuffer, receiveBuffer));
-        gatherArrays({ord + global_.numSendDown(), global_.numAssigned()}, bufDesc_.start, arrays,
+        gatherArrays(execution::cpu, {ord + global_.numSendDown(), global_.numAssigned()}, bufDesc_.start, arrays,
                      std::tie(sendBuffer, receiveBuffer));
     }
 
@@ -327,7 +334,7 @@ public:
     void exchangeHalos(std::tuple<Vectors&...> arrays, SendBuffer& sendBuffer, ReceiveBuffer& receiveBuffer) const
     {
         std::apply([this](auto&... arrays) { this->checkSizesEqual(this->bufDesc_.size, arrays...); }, arrays);
-        this->halos_.exchangeHalos(arrays, sendBuffer, receiveBuffer);
+        this->halos_.exchangeHalos(exec_, arrays, sendBuffer, receiveBuffer);
     }
 
     /*! @brief Add the focus tree cells that contain @p haloKeys to the halos of the previous sync call
@@ -363,9 +370,9 @@ public:
 
         focusTree_.addHaloKeys(haloKeys);
         int fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_) != 0;
-        MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD);
+        MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
         if (fail) { throw std::runtime_error("Domain::addHalos: requested halo cells are invalid\n"); }
-        if constexpr (!HaveGpu<Accelerator>{}) { layoutAcc_ = layout_; }
+        if constexpr (!execution::HaveGpu<Exec>{}) { layoutAcc_ = layout_; }
 
         halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
 
@@ -382,14 +389,12 @@ public:
         auto& tmp     = std::get<0>(scratchBuffers);
         auto relocate = [&, oldStart = bufDesc_.start](auto& array)
         {
-            using Vector       = std::decay_t<decltype(array)>;
-            using V            = typename Vector::value_type;
-            constexpr bool gpu = IsDeviceVector<Vector>{};
-            size_t origSize    = reallocateBytes(tmp, numAssigned * sizeof(V), allocGrowthRate_);
-            auto* tmpPtr       = reinterpret_cast<V*>(rawPtr(tmp));
-            copy_n<gpu>(rawPtr(array) + oldStart, numAssigned, tmpPtr);
+            using V         = typename std::decay_t<decltype(array)>::value_type;
+            size_t origSize = reallocateBytes(tmp, numAssigned * sizeof(V), allocGrowthRate_);
+            auto* tmpPtr    = reinterpret_cast<V*>(rawPtr(tmp));
+            copy_n(exec_, rawPtr(array) + oldStart, numAssigned, tmpPtr);
             reallocate(array, newBufDesc.size, allocGrowthRate_);
-            copy_n<gpu>(tmpPtr, numAssigned, rawPtr(array) + newBufDesc.start);
+            copy_n(exec_, tmpPtr, numAssigned, rawPtr(array) + newBufDesc.start);
             reallocate(tmp, origSize, 1.0);
         };
         util::for_each_tuple(relocate, arrays);
@@ -435,7 +440,7 @@ public:
     //! @brief read only visibility of the global octree in traversible layout
     OctreeView<const KeyType> globalTree() const { return global_.octree(); }
     //! @brief read only visibility of the focused octree
-    const FocusedOctree<KeyType, T, Accelerator>& focusTree() const { return focusTree_; }
+    const FocusedOctree<KeyType, T, Exec>& focusTree() const { return focusTree_; }
     //! @brief the index of the first locally assigned cell in focusTree()
     TreeNodeIndex startCell() const { return focusTree_.assignment()[myRank_].start(); }
     //! @brief the index of the last locally assigned cell in focusTree()
@@ -454,29 +459,32 @@ public:
     void setGrowthAllocRate(float factor) { allocGrowthRate_ = factor; }
 
     //! @brief update expansion (c.o.m) centers of the focus tree
-    template<class VectorX, class VectorM, class VectorS1, class VectorS2>
-    void updateExpansionCenters(VectorX& x, VectorX& y, VectorX& z, VectorM& m, VectorS1& s1, VectorS2& s2)
+    template<class VectorX, class VectorM, class VectorS1>
+    void updateExpansionCenters(VectorX& x, VectorX& y, VectorX& z, VectorM& m, VectorS1& s1)
     {
         auto si = startIndex();
-        focusTree_.updateCenters(rawPtr(x) + si, rawPtr(y) + si, rawPtr(z) + si, rawPtr(m) + si, global_.octree(), s1,
-                                 s2);
+        focusTree_.updateCenters(rawPtr(x) + si, rawPtr(y) + si, rawPtr(z) + si, rawPtr(m) + si, global_.octree(), s1);
         focusTree_.setMacRadius(1.0 / theta_);
-    };
+    }
 
     OctreeNsView<T, KeyType> octreeProperties() const
     {
         auto ft = focusTree_.octreeViewAcc();
         return {ft.numLeafNodes,
+                ft.numNodes,
                 ft.prefixes,
                 ft.childOffsets,
                 ft.parents,
                 ft.internalToLeaf,
+                ft.leafToInternal,
                 ft.levelRange,
                 focusTree_.treeLeavesAcc().data(),
                 rawPtr(layoutAcc_),
                 focusTree_.geoCentersAcc().data(),
                 focusTree_.geoSizesAcc().data()};
     }
+
+    const Exec& exec() const { return exec_; }
 
 private:
     //! @brief bounds initialization on first call, use all particles
@@ -550,7 +558,7 @@ private:
         lowMemReallocate(exchangeSize, allocGrowthRate_, distributedArrays, scratchBuffers);
 
         // Must zero new memory to exclude possibility of special value (removeKey) in uninitialized memory
-        fill<IsDeviceVector<KeyVec>{}>(rawPtr(keys) + bufDesc_.size, rawPtr(keys) + exchangeSize, KeyType(0));
+        fill(exec_, rawPtr(keys) + bufDesc_.size, rawPtr(keys) + exchangeSize, KeyType(0));
 
         return std::apply(
             [exchangeSize, &sorter, &scratchBuffers, this](auto&... arrays)
@@ -567,18 +575,9 @@ private:
         exchangeHalos(std::tie(x, y, z, h), std::get<0>(scratch), std::get<1>(scratch));
 
         // compute SFC keys of received halo particles
-        if constexpr (IsDeviceVector<KeyVec>{})
-        {
-            computeSfcKeysGpu(rawPtr(x), rawPtr(y), rawPtr(z), sfcKindPointer(rawPtr(keys)), bufDesc_.start, box());
-            computeSfcKeysGpu(rawPtr(x) + bufDesc_.end, rawPtr(y) + bufDesc_.end, rawPtr(z) + bufDesc_.end,
-                              sfcKindPointer(rawPtr(keys)) + bufDesc_.end, x.size() - bufDesc_.end, box());
-        }
-        else
-        {
-            computeSfcKeys(rawPtr(x), rawPtr(y), rawPtr(z), sfcKindPointer(rawPtr(keys)), bufDesc_.start, box());
-            computeSfcKeys(rawPtr(x) + bufDesc_.end, rawPtr(y) + bufDesc_.end, rawPtr(z) + bufDesc_.end,
-                           sfcKindPointer(rawPtr(keys)) + bufDesc_.end, x.size() - bufDesc_.end, box());
-        }
+        computeSfcKeys(exec_, rawPtr(x), rawPtr(y), rawPtr(z), sfcKindPointer(rawPtr(keys)), bufDesc_.start, box());
+        computeSfcKeys(exec_, rawPtr(x) + bufDesc_.end, rawPtr(y) + bufDesc_.end, rawPtr(z) + bufDesc_.end,
+                       sfcKindPointer(rawPtr(keys)) + bufDesc_.end, x.size() - bufDesc_.end, box());
     }
 
     template<class Sorter, class KeyVec, class... Arrays1, class... Arrays2, class... Arrays3>
@@ -604,26 +603,26 @@ private:
         auto& swapSpace = std::get<j>(scratchBuffers);
         size_t origSize = reallocateBytes(swapSpace, keyView.size() * sizeof(KeyType), allocGrowthRate_);
         auto* swapPtr   = reinterpret_cast<KeyType*>(swapSpace.data());
-        copy_n<HaveGpu<Accelerator>{}>(keyView.data(), keyView.size(), swapPtr);
+        copy_n(exec_, keyView.data(), keyView.size(), swapPtr);
         reallocate(keys, newBufDesc.size, allocGrowthRate_);
-        fill<HaveGpu<Accelerator>{}>(rawPtr(keys) + bufDesc_.size, rawPtr(keys) + newBufDesc.size, KeyType(0));
-        copy_n<HaveGpu<Accelerator>{}>(swapPtr, keyView.size(), rawPtr(keys) + newBufDesc.start);
+        fill(exec_, rawPtr(keys) + bufDesc_.size, rawPtr(keys) + newBufDesc.size, KeyType(0));
+        copy_n(exec_, swapPtr, keyView.size(), rawPtr(keys) + newBufDesc.start);
         reallocate(swapSpace, origSize, 1.0);
 
         // relocate ordered buffer contents from offset 0 to offset newBufDesc.start
-        auto relocate =
-            [size = keyView.size(), dest = newBufDesc.start, scratch = util::reverse(scratchBuffers)](auto& array)
+        auto relocate = [size = keyView.size(), dest = newBufDesc.start, scratch = util::reverse(scratchBuffers),
+                         exec = exec_](auto& array)
         {
             static_assert(util::Contains<decltype(array), std::tuple<Arrays3&...>>{}, "No suitable scratch buffer");
             auto& swapSpace = util::pickType<decltype(array)>(scratch);
-            copy_n<IsDeviceVector<std::decay_t<decltype(array)>>{}>(rawPtr(array), size, rawPtr(swapSpace) + dest);
+            copy_n(exec, rawPtr(array), size, rawPtr(swapSpace) + dest);
             swap(array, swapSpace);
         };
         util::for_each_tuple(relocate, orderedBuffers);
 
         // reorder the unordered buffers
-        gatherArrays({sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()}, newBufDesc.start,
-                     unorderedBuffers, util::reverse(scratchBuffers));
+        gatherArrays(exec_, {sorter.getMap() + global_.postExchangeStart(bufDesc_), global_.numAssigned()},
+                     newBufDesc.start, unorderedBuffers, util::reverse(scratchBuffers));
 
         // newBufDesc is now the valid buffer description
         prevBufDesc_ = bufDesc_;
@@ -639,15 +638,16 @@ private:
 
         std::vector<KeyType> globalTreeBackingBuffer;
         std::vector<uint8_t> flagsBackingBuffer;
-        if constexpr (cstone::HaveGpu<Accelerator>{})
+        if constexpr (execution::HaveGpu<Exec>{})
         {
             globalTreeBackingBuffer.resize(globalTree.size());
-            memcpyD2H(globalTree.data(), globalTree.size(), globalTreeBackingBuffer.data());
+            memcpyD2HAsync(exec_, globalTree.data(), globalTree.size(), globalTreeBackingBuffer.data());
             globalTree = std::span(globalTreeBackingBuffer);
 
             flagsBackingBuffer.resize(flags.size());
-            memcpyD2H(flags.data(), flags.size(), flagsBackingBuffer.data());
+            memcpyD2HAsync(exec_, flags.data(), flags.size(), flagsBackingBuffer.data());
             flags = std::span(flagsBackingBuffer);
+            syncGpu(exec_);
         }
 
         TreeNodeIndex numFocusPeers    = 0;
@@ -704,9 +704,11 @@ private:
                 }
                 std::cout << std::endl;
             }
-            MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Barrier(comm_);
         }
     }
+
+    Exec exec_;
 
     int myRank_;
     int numRanks_;
@@ -714,6 +716,9 @@ private:
 
     //! @brief MAC parameter for focus resolution and gravity treewalk
     float theta_;
+
+    //! @brief MPI communicator for all collective and point-to-point operations
+    MPI_Comm comm_;
 
     bool convergeTrees{false};
     //! @brief Extra search factor for halo discovery, allowing multiple time integration steps between sync() calls
@@ -738,15 +743,15 @@ private:
      *  fulfills a MAC with theta as the opening parameter
      * -Also contains particle counts.
      */
-    FocusedOctree<KeyType, T, Accelerator> focusTree_;
+    FocusedOctree<KeyType, T, Exec> focusTree_;
 
     //! @brief particle offsets of each leaf node in focusedTree_, length = focusedTree_.treeLeaves().size()
     AccVector<LocalIndex> layoutAcc_;
     std::vector<LocalIndex> layout_;
 
-    GlobalAssignment<KeyType, T, Accelerator> global_;
+    GlobalAssignment<KeyType, T, Exec> global_;
 
-    Halos<KeyType, Accelerator> halos_{myRank_};
+    Halos<KeyType> halos_;
 
     bool firstCall_{true};
 };

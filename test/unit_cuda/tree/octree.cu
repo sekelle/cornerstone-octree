@@ -15,6 +15,7 @@
 
 #include "gtest/gtest.h"
 
+#include "cstone/cuda/stream_holder.cuh"
 #include "cstone/tree/octree_gpu.h"
 #include "cstone/tree/octree.hpp"
 #include "cstone/tree/cs_util.hpp"
@@ -27,13 +28,17 @@ void compareAgainstCpu(const std::vector<KeyType>& tree)
     // upload cornerstone tree to device
     DeviceVector<KeyType> d_leaves = tree;
 
-    OctreeData<KeyType, GpuTag> gpuTree;
+    StreamHolder stream;
+
+    OctreeData<KeyType, execution::Gpu> gpuTree;
     gpuTree.resize(nNodes(tree));
 
-    buildOctreeGpu(rawPtr(d_leaves), gpuTree.data());
+    buildOctreeGpu(stream.exec(), rawPtr(d_leaves), gpuTree.data());
+    stream.sync();
 
-    Octree<KeyType> cpuTree;
-    cpuTree.update(tree.data(), nNodes(tree));
+    OctreeData<KeyType, execution::Cpu> cpuTree;
+    cpuTree.resize(nNodes(tree));
+    updateInternalTree<KeyType>(tree, cpuTree.data());
 
     std::vector<KeyType> h_prefixes = toHost(gpuTree.prefixes);
     for (auto& p : h_prefixes)
@@ -41,29 +46,29 @@ void compareAgainstCpu(const std::vector<KeyType>& tree)
         p = decodePlaceholderBit(p);
     }
 
-    EXPECT_EQ(cpuTree.numTreeNodes(), gpuTree.numLeafNodes + gpuTree.numInternalNodes);
-    for (TreeNodeIndex i = 0; i < cpuTree.numTreeNodes(); ++i)
+    EXPECT_EQ(cpuTree.numNodes, gpuTree.numLeafNodes + gpuTree.numInternalNodes);
+    for (TreeNodeIndex i = 0; i < cpuTree.numNodes; ++i)
     {
-        EXPECT_EQ(h_prefixes[i], cpuTree.codeStart(i));
+        EXPECT_EQ(h_prefixes[i], decodePlaceholderBit(cpuTree.prefixes[i]));
     }
 
     std::vector<TreeNodeIndex> h_children = toHost(gpuTree.childOffsets);
-    for (TreeNodeIndex i = 0; i < cpuTree.numTreeNodes(); ++i)
+    for (TreeNodeIndex i = 0; i < cpuTree.numNodes; ++i)
     {
-        EXPECT_EQ(h_children[i], cpuTree.child(i, 0));
+        EXPECT_EQ(h_children[i], cpuTree.childOffsets[i]);
     }
 
     std::vector<TreeNodeIndex> h_parents = toHost(gpuTree.parents);
-    for (TreeNodeIndex i = 0; i < cpuTree.numTreeNodes(); ++i)
+    for (TreeNodeIndex i = 0; i < cpuTree.numNodes; ++i)
     {
-        EXPECT_EQ(h_parents[(i - 1) / 8], cpuTree.parent(i));
+        EXPECT_EQ(h_parents[(i - 1) / 8], i ? cpuTree.parents[(i - 1) / 8] : 0);
     }
 
-    EXPECT_EQ(gpuTree.levelRange.size(), cpuTree.levelRange().size());
+    EXPECT_EQ(gpuTree.levelRange.size(), cpuTree.levelRange.size());
     EXPECT_EQ(gpuTree.levelRange.size(), maxTreeLevel<KeyType>{} + 2);
     for (unsigned level = 0; level < gpuTree.levelRange.size(); ++level)
     {
-        EXPECT_EQ(gpuTree.levelRange[level], cpuTree.levelRange()[level]);
+        EXPECT_EQ(gpuTree.levelRange[level], cpuTree.levelRange[level]);
     }
 }
 

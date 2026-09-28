@@ -26,7 +26,8 @@ namespace cstone
 template<class KeyType, class T, class F>
 HOST_DEVICE_FUN unsigned continuumCount(KeyType nodeStart, KeyType nodeEnd, const Box<T>& box, F&& concentration)
 {
-    IBox nodeBox        = sfcIBox(sfcKey(nodeStart), sfcKey(nodeEnd));
+    const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
+    IBox nodeBox        = sfcIBox(sfcKey(nodeStart), sfcKey(nodeEnd), axesBits);
     auto [center, size] = centerAndSize<KeyType>(nodeBox, box);
 
     T volume = size[0] * size[1] * size[2];
@@ -48,7 +49,7 @@ template<class KeyType, class T, class F>
 void computeContinuumCounts(
     const KeyType* tree, unsigned* counts, TreeNodeIndex numNodes, const Box<T>& box, F&& concentration)
 {
-#pragma ompe parallel for schedule(static)
+#pragma omp parallel for schedule(static)
     for (TreeNodeIndex i = 0; i < numNodes; ++i)
     {
         counts[i] = continuumCount(tree[i], tree[i + 1], box, concentration);

@@ -34,13 +34,14 @@
 using namespace cstone;
 
 template<class KeyType, class T, class DomainType>
-void randomGaussianDomain(DomainType domain, int rank, int nRanks, bool equalizeH = false)
+void randomGaussianDomain(DomainType domain, int rank, int nRanks)
 {
     LocalIndex numParticles = (1000 / nRanks) * nRanks;
     Box<T> box              = domain.box();
 
     // numParticles identical coordinates on each rank
     RandomGaussianCoordinates<T, SfcKind<KeyType>> coords(numParticles, box, 5);
+
     coords.adjustH(10, 20);
     coords.shuffle(); // destroy SFC order
 
@@ -58,7 +59,6 @@ void randomGaussianDomain(DomainType domain, int rank, int nRanks, bool equalize
 
     LocalIndex localCount    = domain.endIndex() - domain.startIndex();
     LocalIndex localCountSum = localCount;
-    // int extractedCount = x.size();
     MPI_Allreduce(MPI_IN_PLACE, &localCountSum, 1, MpiType<int>{}, MPI_SUM, MPI_COMM_WORLD);
     EXPECT_EQ(localCountSum, numParticles);
 
@@ -96,8 +96,9 @@ void randomGaussianDomain(DomainType domain, int rank, int nRanks, bool equalize
 TEST(FocusDomain, randomGaussianNeighborSum)
 {
     int rank = 0, nRanks = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nRanks);
+    MPI_Comm comm = MPI_COMM_WORLD;
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &nRanks);
 
     int bucketSize      = 50;
     int bucketSizeFocus = 10;
@@ -105,76 +106,98 @@ TEST(FocusDomain, randomGaussianNeighborSum)
     // than the multipole criterion
     float theta = 0.75;
 
+    auto fbc = BoundaryType::fixed;
     {
-        Domain<unsigned, double> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1});
-        randomGaussianDomain<unsigned, double>(domain, rank, nRanks);
-    }
-    {
-        Domain<uint64_t, double> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1});
+        Domain<uint64_t, double> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                        {-1, 1, fbc});
         randomGaussianDomain<uint64_t, double>(domain, rank, nRanks);
     }
     {
-        Domain<unsigned, float> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1});
+        Domain<unsigned, float> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                       {-1, 1, fbc});
         randomGaussianDomain<unsigned, float>(domain, rank, nRanks);
     }
+
     {
-        Domain<uint64_t, float> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1});
-        randomGaussianDomain<uint64_t, float>(domain, rank, nRanks);
+        Domain<uint64_t, double> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                        {0, 1, 0, 0.015625, 0, 0.00390625, fbc, fbc, fbc});
+        randomGaussianDomain<uint64_t, double>(domain, rank, nRanks);
+    }
+    {
+        Domain<unsigned, float> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                       {0, 1, 0, 0.015625, 0, 0.00390625, fbc, fbc, fbc});
+        randomGaussianDomain<unsigned, float>(domain, rank, nRanks);
     }
 }
 
 TEST(FocusDomain, randomGaussianNeighborSumPbc)
 {
     int rank = 0, nRanks = 0;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &nRanks);
+    MPI_Comm comm = MPI_COMM_WORLD;
+    MPI_Comm_rank(comm, &rank);
+    MPI_Comm_size(comm, &nRanks);
 
     int bucketSize      = 50;
     int bucketSizeFocus = 10;
     float theta         = 0.75;
 
-    auto periodic = BoundaryType::periodic;
+    auto pbc = BoundaryType::periodic;
+
     {
-        Domain<unsigned, double> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1, periodic});
-        randomGaussianDomain<unsigned, double>(domain, rank, nRanks);
-    }
-    {
-        Domain<uint64_t, double> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1, periodic});
+        Domain<uint64_t, double> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                        {-1, 1, pbc});
         randomGaussianDomain<uint64_t, double>(domain, rank, nRanks);
     }
     {
-        Domain<unsigned, float> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1, periodic});
+        Domain<unsigned, float> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                       {-1, 1, pbc});
         randomGaussianDomain<unsigned, float>(domain, rank, nRanks);
     }
+
     {
-        Domain<uint64_t, float> domain(rank, nRanks, bucketSize, bucketSizeFocus, theta, {-1, 1, periodic});
-        randomGaussianDomain<uint64_t, float>(domain, rank, nRanks);
+        Domain<uint64_t, double> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                        {0, 1, 0, 0.015625, 0, 0.00390625, pbc, pbc, pbc});
+        randomGaussianDomain<uint64_t, double>(domain, rank, nRanks);
+    }
+    {
+        Domain<unsigned, float> domain(execution::cpu, rank, nRanks, bucketSize, bucketSizeFocus, theta, comm,
+                                       {0, 1, 0, 0.015625, 0, 0.00390625, pbc, pbc, pbc});
+        randomGaussianDomain<unsigned, float>(domain, rank, nRanks);
     }
 }
 
-TEST(FocusDomain, assignmentShift)
+/*! @brief Test domain re-assignment after large particle displacement with mixed-dimension boxes
+ *
+ * @tparam     KeyType         32-bit or 64-bit SFC key type
+ * @tparam     sfcKeyType      SFC key wrapper template (e.g. SfcKind)
+ * @param[in]  box             simulation bounding box (supports non-cubic MixD boxes)
+ *
+ * Initial domain sync, shifts particles on rank 2, resyncs, and verifies that halo exchange
+ * correctly delivers all rank properties without gaps.
+ */
+template<class KeyType, template<class> class sfcKeyType>
+void testAssignmentShift(const Box<double>& box)
 {
     int rank = 0, numRanks = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
 
-    using Real    = double;
-    using KeyType = unsigned;
+    using Real = double;
 
-    Box<Real> box(0, 1);
     LocalIndex numParticlesPerRank = 15000;
     unsigned bucketSize            = 1024;
     unsigned bucketSizeFocus       = 8;
     float theta                    = 0.5;
 
-    RandomCoordinates<Real, SfcKind<KeyType>> coordinates(numParticlesPerRank, box, rank);
+    RandomCoordinates<Real, sfcKeyType<KeyType>> coordinates{numParticlesPerRank, box, static_cast<std::size_t>(rank)};
 
     std::vector<Real> x(coordinates.x().begin(), coordinates.x().end());
     std::vector<Real> y(coordinates.y().begin(), coordinates.y().end());
     std::vector<Real> z(coordinates.z().begin(), coordinates.z().end());
-    std::vector<Real> h(numParticlesPerRank, 0.1 / std::cbrt(numRanks));
+    std::vector<Real> h(numParticlesPerRank, 0.05 / std::cbrt(numRanks));
 
-    Domain<KeyType, Real> domain(rank, numRanks, bucketSize, bucketSizeFocus, theta, box);
+    Domain<KeyType, Real> domain(execution::cpu, rank, numRanks, bucketSize, bucketSizeFocus, theta, MPI_COMM_WORLD,
+                                 box);
 
     std::vector<KeyType> particleKeys(x.size());
 
@@ -203,32 +226,47 @@ TEST(FocusDomain, assignmentShift)
     EXPECT_TRUE(std::count(property.begin(), property.end(), rank) == domain.nParticles());
 }
 
-TEST(FocusDomain, removeParticle)
+TEST(FocusDomain, assignmentShift)
+{
+    testAssignmentShift<unsigned, SfcKind>(Box<double>{0, 1});
+    testAssignmentShift<unsigned, SfcKind>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
+}
+
+/*! @brief Test particle removal in a CPU domain with mixed-dimension boxes
+ *
+ * @tparam     KeyType         32-bit or 64-bit SFC key type
+ * @tparam     sfcKeyType      SFC key wrapper template (e.g. SfcKind)
+ * @param[in]  box             simulation bounding box (supports non-cubic MixD boxes)
+ *
+ * Particles are assigned to a domain, one particle per rank is marked with removeKey and removed.
+ * Verifies the global count decreases by one per rank and removed IDs are gone.
+ */
+template<class KeyType, template<class> class sfcKeyType>
+void removeParticle(const Box<double>& box)
 {
     int rank = 0, numRanks = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
 
-    using Real    = double;
-    using KeyType = unsigned;
+    using Real = double;
 
-    Box<Real> box(0, 1);
     LocalIndex numParticlesPerRank = 1000;
     unsigned bucketSize            = 64;
     unsigned bucketSizeFocus       = 8;
     float theta                    = 0.5;
 
-    RandomCoordinates<Real, SfcKind<KeyType>> coordinates(numParticlesPerRank, box, rank);
+    RandomCoordinates<Real, sfcKeyType<KeyType>> coordinates{numParticlesPerRank, box, static_cast<std::size_t>(rank)};
 
     std::vector<Real> x(coordinates.x().begin(), coordinates.x().end());
     std::vector<Real> y(coordinates.y().begin(), coordinates.y().end());
     std::vector<Real> z(coordinates.z().begin(), coordinates.z().end());
-    std::vector<Real> h(numParticlesPerRank, 0.1 / std::cbrt(numRanks));
+    std::vector<Real> h(numParticlesPerRank, 0.05 / std::cbrt(numRanks));
 
     std::vector<uint64_t> id(x.size());
     std::iota(begin(id), end(id), uint64_t(rank * numParticlesPerRank));
 
-    Domain<KeyType, Real> domain(rank, numRanks, bucketSize, bucketSizeFocus, theta, box);
+    Domain<KeyType, Real> domain(execution::cpu, rank, numRanks, bucketSize, bucketSizeFocus, theta, MPI_COMM_WORLD,
+                                 box);
 
     std::vector<KeyType> particleKeys(x.size());
 
@@ -257,38 +295,53 @@ TEST(FocusDomain, removeParticle)
     }
 }
 
-TEST(FocusDomain, reapplySync)
+TEST(FocusDomain, removeParticle)
+{
+    removeParticle<unsigned, SfcKind>(Box<double>{0, 1});
+    removeParticle<unsigned, SfcKind>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
+}
+
+/*! @brief Test domain::reapplySync for CPU property exchange with mixed-dimension boxes
+ *
+ * @tparam     KeyType         32-bit or 64-bit SFC key type
+ * @tparam     sfcKeyType      SFC key wrapper template (e.g. SfcKind)
+ * @param[in]  box             simulation bounding box (supports non-cubic MixD boxes)
+ *
+ * Particles are assigned, coordinates are modified, and a property array is exchanged via sync.
+ * reapplySync is used on a copy of the property array, and both are compared for correctness.
+ */
+template<class KeyType, template<class> class sfcKeyType>
+void testReapplySync(const Box<double>& box)
 {
     int rank = 0, numRanks = 0;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
 
-    using Real    = double;
-    using KeyType = unsigned;
+    using Real = double;
 
-    Box<Real> box(0, 1);
     LocalIndex numParticlesPerRank = 10000;
     unsigned bucketSize            = 1024;
     unsigned bucketSizeFocus       = 8;
     float theta                    = 0.5;
 
-    // Note: rank used as seed, so each rank will get different coordinates
-    RandomCoordinates<Real, SfcKind<KeyType>> coordinates(numParticlesPerRank, box, rank);
+    RandomCoordinates<Real, sfcKeyType<KeyType>> coordinates{numParticlesPerRank, box, static_cast<std::size_t>(rank)};
 
     std::vector<Real> x(coordinates.x().begin(), coordinates.x().end());
     std::vector<Real> y(coordinates.y().begin(), coordinates.y().end());
     std::vector<Real> z(coordinates.z().begin(), coordinates.z().end());
-    std::vector<Real> h(numParticlesPerRank, 0.1 / std::cbrt(numRanks));
+    std::vector<Real> h(numParticlesPerRank, 0.05 / std::cbrt(numRanks));
     std::vector<KeyType> particleKeys(x.size());
 
-    Domain<KeyType, Real> domain(rank, numRanks, bucketSize, bucketSizeFocus, theta, box);
+    Domain<KeyType, Real> domain(execution::cpu, rank, numRanks, bucketSize, bucketSizeFocus, theta, MPI_COMM_WORLD,
+                                 box);
 
     std::vector<Real> s1, s2, s3;
     domain.sync(particleKeys, x, y, z, h, std::tuple{}, std::tie(s1, s2, s3));
 
     // modify coordinates
     {
-        RandomCoordinates<Real, SfcKind<KeyType>> scord(domain.nParticles(), box, numRanks + rank);
+        RandomCoordinates<Real, sfcKeyType<KeyType>> scord{domain.nParticles(), box,
+                                                           static_cast<std::size_t>(numRanks + rank)};
         std::copy(scord.x().begin(), scord.x().end(), x.begin() + domain.startIndex());
         std::copy(scord.y().begin(), scord.y().end(), y.begin() + domain.startIndex());
         std::copy(scord.z().begin(), scord.z().end(), z.begin() + domain.startIndex());
@@ -310,7 +363,7 @@ TEST(FocusDomain, reapplySync)
     EXPECT_EQ(property.size(), propertyCpy.size());
 
     int numPass = 0;
-    for (int i = domain.startIndex(); i < domain.endIndex(); ++i)
+    for (auto i = domain.startIndex(); i < domain.endIndex(); ++i)
     {
         if (property[i] == propertyCpy[i]) numPass++;
     }
@@ -326,6 +379,12 @@ TEST(FocusDomain, reapplySync)
         int numCommon = it - s.begin();
         EXPECT_EQ(numCommon, domain.nParticles());
     }
+}
+
+TEST(FocusDomain, reapplySync)
+{
+    testReapplySync<unsigned, SfcKind>(Box<double>{0, 1});
+    testReapplySync<unsigned, SfcKind>(Box<double>{0, 1, 0, 0.015625, 0, 0.00390625});
 }
 
 template<class KeyType, class T>
@@ -356,7 +415,8 @@ void randomGaussianGrav(int thisRank, int numRanks)
     std::vector<T> m(globalMasses.begin() + firstIndex, globalMasses.begin() + lastIndex);
     std::vector<KeyType> keys(x.size());
 
-    Domain<KeyType, T, CpuTag> domain(thisRank, numRanks, bucketSize, bucketSizeLocal, theta, box);
+    Domain<KeyType, T, execution::Cpu> domain(execution::cpu, thisRank, numRanks, bucketSize, bucketSizeLocal, theta,
+                                              MPI_COMM_WORLD, box);
 
     std::vector<T> s1, s2, s3;
     domain.syncGrav(keys, x, y, z, h, m, std::tuple{}, std::tie(s1, s2, s3));
@@ -379,7 +439,7 @@ void randomGaussianGrav(int thisRank, int numRanks)
     // Any leaf in the tree with particles: does it contain the same particles as in the reference set of particles?
 
     ASSERT_EQ(let_leaves.size(), let_layout.size());
-    for (int i = 0; i < let_leaves.size() - 1; ++i)
+    for (std::size_t i = 0; i < let_leaves.size() - 1; ++i)
     {
         if (let_layout[i + 1] > let_layout[i])
         {
@@ -391,7 +451,7 @@ void randomGaussianGrav(int thisRank, int numRanks)
             int gi2 = std::lower_bound(gkeys.begin(), gkeys.end(), pk2) - gkeys.begin();
             EXPECT_EQ(gi2 - gi1 + 1, let_lcounts[i]);
 
-            for (int d = 0; d < let_lcounts[i]; ++d)
+            for (LocalIndex d = 0; d < let_lcounts[i]; ++d)
             {
                 EXPECT_EQ(keys[let_layout[i] + d], gkeys[gi1 + d]);
             }
@@ -421,10 +481,12 @@ void randomGaussianGrav(int thisRank, int numRanks)
         spanSfcRange(focusStart, focusEnd, spanningKeys.data());
         spanningKeys.back() = focusEnd;
 
+        const auto axesBits = domain.box().getBoxDimBits(maxTreeLevel<KeyType>{});
+
         std::vector<uint8_t> marks(let_full.numNodes, 0);
-        for (TreeNodeIndex i = 0; i < nNodes(spanningKeys); ++i)
+        for (std::size_t i = 0; i < nNodes(spanningKeys); ++i)
         {
-            IBox target                     = sfcIBox(sfcKey(spanningKeys[i]), sfcKey(spanningKeys[i + 1]));
+            IBox target                     = sfcIBox(sfcKey(spanningKeys[i]), sfcKey(spanningKeys[i + 1]), axesBits);
             auto [targetCenter, targetSize] = centerAndSize<KeyType>(target, box);
             unsigned maxLevel               = maxTreeLevel<KeyType>{};
 
@@ -461,7 +523,7 @@ void randomGaussianGrav(int thisRank, int numRanks)
 
         auto [globCsarray, globCounts] = computeOctree(gkeys, 16);
 
-        OctreeData<KeyType, CpuTag> octree;
+        OctreeData<KeyType, execution::Cpu> octree;
         octree.resize(nNodes(globCsarray));
         updateInternalTree<KeyType>(globCsarray, octree.data());
 
@@ -472,9 +534,9 @@ void randomGaussianGrav(int thisRank, int numRanks)
         nodeFpCenters<KeyType>(octree.prefixes, geoCenters.data(), geoSizes.data(), box);
 
         auto o = octree.data();
-        OctreeNsView<T, KeyType> octreeProps{o.numLeafNodes,    o.prefixes,     o.childOffsets,     o.parents,
-                                             o.internalToLeaf,  o.levelRange,   globCsarray.data(), layout.data(),
-                                             geoCenters.data(), geoSizes.data()};
+        OctreeNsView<T, KeyType> octreeProps{o.numLeafNodes,     o.numNodes,       o.prefixes,        o.childOffsets,
+                                             o.parents,          o.internalToLeaf, o.leafToInternal,  o.levelRange,
+                                             globCsarray.data(), layout.data(),    geoCenters.data(), geoSizes.data()};
 
         findNeighbors(coords.x().data(), coords.y().data(), coords.z().data(), coords.h().data(), firstGlobalIdx,
                       lastGlobalIdx, box, octreeProps, ngmax, neighborsRef.data(), neighborsCountRef.data());

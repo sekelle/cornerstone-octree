@@ -107,10 +107,12 @@ static std::vector<uint8_t> markVecMacAll2All(const KeyType* leaves,
 {
     std::vector<uint8_t> markings(prefixes.size(), 0);
 
+    const auto axesBits = box.getBoxDimBits(maxTreeLevel<KeyType>{});
+
     // loop over target cells
     for (TreeNodeIndex i = firstLeaf; i < lastLeaf; ++i)
     {
-        IBox targetBox                  = sfcIBox(sfcKey(leaves[i]), sfcKey(leaves[i + 1]));
+        IBox targetBox                  = sfcIBox(sfcKey(leaves[i]), sfcKey(leaves[i + 1]), axesBits);
         auto [targetCenter, targetSize] = centerAndSize<KeyType>(targetBox, box);
 
         // loop over source cells
@@ -137,13 +139,13 @@ static void markMacVector()
     LocalIndex numParticles = 1000;
     unsigned bucketSize     = 2;
     float theta             = 0.58;
-    Box<T> box(0, 1);
+    Box<T> box(0, 1, 0, 0.3, 0, 0.6);
 
     RandomGaussianCoordinates<T, SfcKind<KeyType>> coords(numParticles, box);
     std::vector<T> masses(numParticles, 1.0 / numParticles);
 
     auto [leaves, counts] = computeOctree<KeyType>(coords.particleKeys(), bucketSize);
-    OctreeData<KeyType, CpuTag> octree;
+    OctreeData<KeyType, execution::Cpu> octree;
     octree.resize(nNodes(leaves));
     updateInternalTree<KeyType>(leaves, octree.data());
 
@@ -187,7 +189,7 @@ TEST(Macs, limitSource4x4)
     float invTheta = sqrt(3.) / 2;
 
     std::vector<KeyType> leaves = makeUniformNLevelTree<KeyType>(64, 1);
-    OctreeData<KeyType, CpuTag> fullTree;
+    OctreeData<KeyType, execution::Cpu> fullTree;
     fullTree.resize(nNodes(leaves));
     OctreeView<KeyType> ov = fullTree.data();
     updateInternalTree<KeyType>(leaves, ov);

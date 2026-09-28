@@ -232,7 +232,7 @@ __device__ __forceinline__ T warpBitwiseOr(T laneVal)
 //! @brief standard inclusive warp-scan
 __device__ __forceinline__ int inclusiveScanInt(int value)
 {
-    unsigned lane = laneIndex();
+    int lane = laneIndex();
 #pragma unroll
     for (int i = 1; i < GpuConfig::warpSize; i *= 2)
     {
@@ -388,6 +388,22 @@ __device__ __forceinline__ float atomicMaxFloat(float* addr, float value)
 {
     return !signbit(value) ? __int_as_float(atomicMax((int*)addr, __float_as_int(value)))
                            : __uint_as_float(atomicMin((unsigned int*)addr, __float_as_uint(value)));
+}
+
+// adapted from float version above
+__device__ __forceinline__ double atomicMinDouble(double* addr, double value)
+{
+    return !signbit(value) ? __longlong_as_double(atomicMin((long long*)addr, __double_as_longlong(value)))
+                           : __longlong_as_double(
+                                 atomicMax((unsigned long long*)addr, (unsigned long long)__double_as_longlong(value)));
+}
+
+// adapted from float version above
+__device__ __forceinline__ double atomicMaxDouble(double* addr, double value)
+{
+    return !signbit(value) ? __longlong_as_double(atomicMax((long long*)addr, __double_as_longlong(value)))
+                           : __longlong_as_double(
+                                 atomicMin((unsigned long long*)addr, (unsigned long long)__double_as_longlong(value)));
 }
 
 } // namespace cstone
