@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include <cstdio>
+
 #include "cstone/cuda/cuda_utils.hpp"
 #include "cstone/domain/assignment.hpp"
 #include "cstone/domain/layout.hpp"
@@ -369,9 +371,14 @@ public:
         std::apply([this](auto&... a) { this->checkSizesEqual(this->bufDesc_.size, a...); }, arrays);
 
         focusTree_.addHaloKeys(haloKeys);
-        int fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_) != 0;
+        int code = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
+        int fail = code != 0;
         MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
-        if (fail) { throw std::runtime_error("Domain::addHalos: requested halo cells are invalid\n"); }
+        if (fail)
+        {
+            if (code != 0) { reportInvalidHalos(code, haloKeys, x, y, z); }
+            throw std::runtime_error("Domain::addHalos: requested halo cells are invalid\n");
+        }
         if constexpr (!execution::HaveGpu<Exec>{}) { layoutAcc_ = layout_; }
 
         halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
@@ -401,6 +408,92 @@ public:
 
         bufDesc_ = newBufDesc;
         setupHalos(particleKeys, x, y, z, h, scratchBuffers);
+    }
+
+    //! @brief Why the layout after addHaloKeys failed on this rank: checkLayout rejects halo cells that lie in no
+    //! rank's range of the focus tree (code 1) or hold more than 512 * bucketSizeFocus particles (code -1)
+    template<class VectorX>
+    void reportInvalidHalos(int code, std::span<const KeyType> haloKeys, const VectorX& x, const VectorX& y,
+                            const VectorX& z) const
+    {
+        auto leaves     = focusTree_.treeLeaves();
+        auto ranges     = focusTree_.assignment();
+        auto own        = ranges[myRank_];
+        unsigned limit  = 512 * bucketSizeFocus_;
+        auto inAnyRange = [&](TreeNodeIndex i)
+        {
+            for (auto r : ranges)
+            {
+                if (r.start() <= i && i < r.end()) { return true; }
+            }
+            return false;
+        };
+
+        long noRange = 0, overLimit = 0;
+        for (TreeNodeIndex i = 0; i < TreeNodeIndex(nNodes(leaves)); ++i)
+        {
+            if (own.start() <= i && i < own.end()) { continue; }
+            LocalIndex count = layout_[i + 1] - layout_[i];
+            if (count > 0 && !inAnyRange(i)) { noRange++; }
+            if (count > limit) { overLimit++; }
+        }
+
+        std::vector<KeyType> keys(haloKeys.size());
+        if constexpr (execution::HaveGpu<Exec>{})
+        {
+            memcpyD2HAsync(exec_, haloKeys.data(), haloKeys.size(), keys.data());
+            syncGpu(exec_);
+        }
+        else { std::copy(haloKeys.begin(), haloKeys.end(), keys.begin()); }
+        long keysNoRange = 0;
+        LocalIndex maxRequested = 0;
+        const auto& bx  = box();
+        const auto bits = bx.getBoxDimBits(maxTreeLevel<KeyType>{});
+        for (KeyType key : keys)
+        {
+            TreeNodeIndex i = findNodeBelow(leaves.data(), nNodes(leaves), key);
+            if (own.start() <= i && i < own.end()) { continue; }
+            maxRequested = std::max(maxRequested, LocalIndex(layout_[i + 1] - layout_[i]));
+            if (inAnyRange(i)) { continue; }
+            if (keysNoRange++ < 5)
+            {
+                auto [ix, iy, iz] = decodeSfc(sfcKey(key), bits);
+                std::fprintf(stderr,
+                             "Domain::addHalos rank %d: key at (%g, %g, %g) in cell %d of %u particles, keys [%llu, "
+                             "%llu)\n",
+                             myRank_, bx.xmin() + ix * bx.lx() / (1u << bits[0]),
+                             bx.ymin() + iy * bx.ly() / (1u << bits[1]), bx.zmin() + iz * bx.lz() / (1u << bits[2]), i,
+                             unsigned(layout_[i + 1] - layout_[i]), (unsigned long long)leaves[i],
+                             (unsigned long long)leaves[i + 1]);
+            }
+        }
+        // bounding box of the assigned particles
+        std::vector<T> px(nParticles()), py(nParticles()), pz(nParticles());
+        if constexpr (execution::HaveGpu<Exec>{})
+        {
+            memcpyD2HAsync(exec_, rawPtr(x) + startIndex(), nParticles(), px.data());
+            memcpyD2HAsync(exec_, rawPtr(y) + startIndex(), nParticles(), py.data());
+            memcpyD2HAsync(exec_, rawPtr(z) + startIndex(), nParticles(), pz.data());
+            syncGpu(exec_);
+        }
+        else
+        {
+            std::copy_n(rawPtr(x) + startIndex(), nParticles(), px.begin());
+            std::copy_n(rawPtr(y) + startIndex(), nParticles(), py.begin());
+            std::copy_n(rawPtr(z) + startIndex(), nParticles(), pz.begin());
+        }
+        if (!px.empty())
+        {
+            auto [x0, x1] = std::minmax_element(px.begin(), px.end());
+            auto [y0, y1] = std::minmax_element(py.begin(), py.end());
+            auto [z0, z1] = std::minmax_element(pz.begin(), pz.end());
+            std::fprintf(stderr, "Domain::addHalos rank %d: assigned particles in [%g, %g] x [%g, %g] x [%g, %g]\n",
+                         myRank_, *x0, *x1, *y0, *y1, *z0, *z1);
+        }
+        std::fprintf(stderr,
+                     "Domain::addHalos rank %d: code %d, %zu requested keys, %ld in cells of no rank range, largest "
+                     "requested cell %u particles (limit %u); halo cells of no rank range %ld, over the limit %ld\n",
+                     myRank_, code, keys.size(), keysNoRange, unsigned(maxRequested), limit, noRange, overLimit);
     }
 
     //! @brief Read-only access to halo bookkeeping (forwarded from Halos).
