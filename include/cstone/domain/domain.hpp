@@ -370,10 +370,30 @@ public:
         auto arrays = std::tuple_cat(std::tie(particleKeys, x, y, z, h), particleProperties);
         std::apply([this](auto&... a) { this->checkSizesEqual(this->bufDesc_.size, a...); }, arrays);
 
-        focusTree_.addHaloKeys(haloKeys);
-        int code = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
-        int fail = code != 0;
-        MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
+        // A requested key can fall in a focus cell that spans several ranks: the MAC does not refine it when the
+        // requesting particles are farther away than its acceptance distance, e.g. across a tall mesh element.
+        // As in the LET refinement of sync(), the halo flags make updateTree split such cells, so refine and flag
+        // the keys again on the finer tree.
+        std::span<const KeyType> keyView{rawPtr(particleKeys) + bufDesc_.start, size_t(bufDesc_.end - bufDesc_.start)};
+        auto& scratch = std::get<0>(scratchBuffers);
+        int code = 0, fail = 0, maxRep = 10;
+        while (true)
+        {
+            focusTree_.addHaloKeys(haloKeys);
+            code = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
+            fail = code != 0;
+            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
+            if (!fail || maxRep-- == 0) { break; }
+            if (myRank_ == 0) { std::cout << "addHalos refine" << std::endl; }
+
+            focusTree_.updateMinMac(global_.assignment(), invThetaMinMac(theta_), true);
+            focusTree_.updateTree(global_.assignment(), global_.treeLeaves(), box(), scratch);
+            focusTree_.updateCounts(keyView, global_.treeLeaves(), global_.nodeCounts(), scratch);
+            reallocate(focusTree_.octreeViewAcc().numLeafNodes + 1, allocGrowthRate_, layout_, layoutAcc_);
+            focusTree_.discoverHalos(rawPtr(x) + bufDesc_.start, rawPtr(y) + bufDesc_.start, rawPtr(z) + bufDesc_.start,
+                                     rawPtr(h) + bufDesc_.start, {rawPtr(layoutAcc_), layoutAcc_.size()},
+                                     haloSearchExt_, scratch, false);
+        }
         if (fail)
         {
             if (code != 0) { reportInvalidHalos(code, haloKeys, x, y, z); }

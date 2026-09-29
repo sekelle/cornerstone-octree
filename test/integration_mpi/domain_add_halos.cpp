@@ -11,6 +11,7 @@
  * @brief Test Domain::addHalos, halos requested by key on top of the distance-based halos
  */
 
+#include <array>
 #include <set>
 
 #include <mpi.h>
@@ -20,34 +21,35 @@
 
 using namespace cstone;
 
-/*! @brief particles on a regular n^3 grid, each with an id property
+/*! @brief particles on a regular n[0] x n[1] x n[2] grid, each with an id property
  *
  * The smoothing lengths are much smaller than the grid spacing, so sync() leaves out many grid neighbours of the
  * assigned particles. Requesting all 26 neighbours by key must make them all present, as a mesh needs for the
- * elements that share a node.
+ * elements that share a node. The z-spacing is @p zStretch times the x,y-spacing, like a layer of tall elements.
  */
 template<class KeyType, class T>
-void addNeighbourHalos(int rank, int numRanks)
+void addNeighbourHalos(int rank, int numRanks, std::array<int, 3> n, T zStretch)
 {
-    constexpr int n = 16;
-    constexpr int N = n * n * n;
-    T dx            = T(1) / (n - 1);
+    const int N = n[0] * n[1] * n[2];
+    const T dx  = T(1) / (n[0] - 1);
+    const T dz  = zStretch * dx;
 
-    auto gridIndex = [dx](T c) { return int(std::lround(c / dx)); };
-    auto gridId    = [](int i, int j, int k) { return T((i * n + j) * n + k); };
+    auto gridIndex = [](T c, T spacing) { return int(std::lround(c / spacing)); };
+    auto gridId    = [n](int i, int j, int k) { return T((i * n[1] + j) * n[2] + k); };
 
     // hand out the grid round-robin, so the initial distribution has nothing to do with the SFC
     std::vector<T> x, y, z, h, id;
     for (int i = rank; i < N; i += numRanks)
     {
-        x.push_back((i / (n * n)) * dx);
-        y.push_back(((i / n) % n) * dx);
-        z.push_back((i % n) * dx);
+        x.push_back((i / (n[1] * n[2])) * dx);
+        y.push_back(((i / n[2]) % n[1]) * dx);
+        z.push_back((i % n[2]) * dz);
         h.push_back(0.05 * dx);
         id.push_back(i);
     }
 
-    Domain<KeyType, T> domain(rank, numRanks, 16, 8, 1.0, Box<T>{0, 1});
+    Box<T> box(0, 1, 0, (n[1] - 1) * dx, 0, (n[2] - 1) * dz);
+    Domain<KeyType, T> domain(execution::cpu, rank, numRanks, 16, 8, 1.0, MPI_COMM_WORLD, box);
     std::vector<KeyType> keys(x.size());
     std::vector<T> s1, s2, s3;
     domain.sync(keys, x, y, z, h, std::tie(id), std::tie(s1, s2, s3));
@@ -57,21 +59,21 @@ void addNeighbourHalos(int rank, int numRanks)
     std::set<T> presentBefore;
     for (size_t i = 0; i < x.size(); ++i)
     {
-        presentBefore.insert(gridId(gridIndex(x[i]), gridIndex(y[i]), gridIndex(z[i])));
+        presentBefore.insert(gridId(gridIndex(x[i], dx), gridIndex(y[i], dx), gridIndex(z[i], dz)));
     }
 
     std::vector<KeyType> request;
     std::set<T> neighbours;
     for (size_t p = domain.startIndex(); p < domain.endIndex(); ++p)
     {
-        int i = gridIndex(x[p]), j = gridIndex(y[p]), k = gridIndex(z[p]);
+        int i = gridIndex(x[p], dx), j = gridIndex(y[p], dx), k = gridIndex(z[p], dz);
         for (int di = -1; di <= 1; ++di)
             for (int dj = -1; dj <= 1; ++dj)
                 for (int dk = -1; dk <= 1; ++dk)
                 {
                     int a = i + di, b = j + dj, c = k + dk;
-                    if (a < 0 || b < 0 || c < 0 || a >= n || b >= n || c >= n) { continue; }
-                    request.push_back(sfc3D<SfcKind<KeyType>>(a * dx, b * dx, c * dx, domain.box()));
+                    if (a < 0 || b < 0 || c < 0 || a >= n[0] || b >= n[1] || c >= n[2]) { continue; }
+                    request.push_back(sfc3D<SfcKind<KeyType>>(a * dx, b * dx, c * dz, domain.box()));
                     neighbours.insert(gridId(a, b, c));
                 }
     }
@@ -100,7 +102,7 @@ void addNeighbourHalos(int rank, int numRanks)
     for (size_t i = 0; i < x.size(); ++i)
     {
         // halo properties arrive through the new exchange pattern and must match the halo coordinates
-        EXPECT_EQ(id[i], gridId(gridIndex(x[i]), gridIndex(y[i]), gridIndex(z[i])));
+        EXPECT_EQ(id[i], gridId(gridIndex(x[i], dx), gridIndex(y[i], dx), gridIndex(z[i], dz)));
         presentAfter.insert(id[i]);
     }
     for (T i : presentBefore)
@@ -122,7 +124,7 @@ void addNeighbourHalos(int rank, int numRanks)
     domain.exchangeHalos(std::tie(id), s1, s2);
     for (size_t i = 0; i < x.size(); ++i)
     {
-        EXPECT_EQ(id[i], gridId(gridIndex(x[i]), gridIndex(y[i]), gridIndex(z[i])));
+        EXPECT_EQ(id[i], gridId(gridIndex(x[i], dx), gridIndex(y[i], dx), gridIndex(z[i], dz)));
     }
 }
 
@@ -132,8 +134,23 @@ TEST(DomainAddHalos, neighbours)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
 
-    addNeighbourHalos<uint64_t, double>(rank, numRanks);
-    addNeighbourHalos<unsigned, float>(rank, numRanks);
+    addNeighbourHalos<uint64_t, double>(rank, numRanks, {16, 16, 16}, 1.0);
+    addNeighbourHalos<unsigned, float>(rank, numRanks, {16, 16, 16}, 1.0);
+}
+
+/*! @brief two layers of particles far apart compared to their in-layer spacing
+ *
+ * A requested neighbour in the other layer can lie in a focus cell that passes the MAC and spans several ranks.
+ * addHalos has to refine the focus tree until that cell belongs to one rank.
+ */
+TEST(DomainAddHalos, tallLayers)
+{
+    int rank = 0, numRanks = 0;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &numRanks);
+
+    addNeighbourHalos<uint64_t, double>(rank, numRanks, {64, 64, 2}, 150.0);
+    addNeighbourHalos<unsigned, float>(rank, numRanks, {64, 64, 2}, 150.0f);
 }
 
 //! @brief no rank requests anything: the halos of the previous sync must stay unchanged
@@ -155,7 +172,7 @@ TEST(DomainAddHalos, noKeys)
         h.push_back(0.3 / (n - 1));
     }
 
-    Domain<KeyType, T> domain(rank, numRanks, 16, 8, 1.0, Box<T>{0, 1});
+    Domain<KeyType, T> domain(execution::cpu, rank, numRanks, 16, 8, 1.0, MPI_COMM_WORLD, Box<T>{0, 1});
     std::vector<KeyType> keys(x.size());
     std::vector<T> s1, s2, s3;
     domain.sync(keys, x, y, z, h, std::tuple{}, std::tie(s1, s2, s3));

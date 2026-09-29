@@ -63,18 +63,20 @@ extern void findHalosGpu(execution::Gpu exec,
  * @param[in]  leaves          cstone array of leaf node keys, length numLeaves + 1
  * @param[in]  numLeaves       number of leaf nodes
  * @param[in]  leafToInternal  octree node index of each leaf, length numLeaves
+ * @param[in]  parents         parent node index of each group of 8 siblings
  * @param[in]  firstNode       first leaf index assigned to the executing rank
  * @param[in]  lastNode        last leaf index assigned to the executing rank
  * @param[in]  keys            SFC keys, length numKeys
  * @param[in]  numKeys         number of keys
- * @param[out] collisionFlags  octree node flags, leaves outside [firstNode:lastNode] that contain a key are set
- *                             to 1, other flags are not touched
+ * @param[out] collisionFlags  octree node flags, leaves outside [firstNode:lastNode] that contain a key and their
+ *                             ancestors are set to 1, other flags are not touched
  */
 template<class KeyType>
 extern void markHaloKeysGpu(execution::Gpu exec,
                             const KeyType* leaves,
                             TreeNodeIndex numLeaves,
                             const TreeNodeIndex* leafToInternal,
+                            const TreeNodeIndex* parents,
                             TreeNodeIndex firstNode,
                             TreeNodeIndex lastNode,
                             const KeyType* keys,

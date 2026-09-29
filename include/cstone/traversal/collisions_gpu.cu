@@ -95,6 +95,7 @@ template<class KeyType>
 __global__ void markHaloKeysKernel(const KeyType* leaves,
                                    TreeNodeIndex numLeaves,
                                    const TreeNodeIndex* leafToInternal,
+                                   const TreeNodeIndex* parents,
                                    TreeNodeIndex firstNode,
                                    TreeNodeIndex lastNode,
                                    const KeyType* keys,
@@ -105,7 +106,8 @@ __global__ void markHaloKeysKernel(const KeyType* leaves,
     if (tid >= numKeys) { return; }
 
     TreeNodeIndex leafIdx = findNodeBelow(leaves, numLeaves, keys[tid]);
-    if (leafIdx < firstNode || leafIdx >= lastNode) { collisionFlags[leafToInternal[leafIdx]] = 1; }
+    if (leafIdx >= firstNode && leafIdx < lastNode) { return; }
+    markHaloAncestors(leafToInternal[leafIdx], parents, collisionFlags);
 }
 
 template<class KeyType>
@@ -113,6 +115,7 @@ void markHaloKeysGpu(execution::Gpu exec,
                      const KeyType* leaves,
                      TreeNodeIndex numLeaves,
                      const TreeNodeIndex* leafToInternal,
+                     const TreeNodeIndex* parents,
                      TreeNodeIndex firstNode,
                      TreeNodeIndex lastNode,
                      const KeyType* keys,
@@ -123,14 +126,30 @@ void markHaloKeysGpu(execution::Gpu exec,
     unsigned numBlocks            = iceil(numKeys, numThreads);
 
     if (numBlocks == 0) { return; }
-    markHaloKeysKernel<<<numBlocks, numThreads, 0, exec>>>(leaves, numLeaves, leafToInternal, firstNode, lastNode,
-                                                           keys, numKeys, collisionFlags);
+    markHaloKeysKernel<<<numBlocks, numThreads, 0, exec>>>(leaves, numLeaves, leafToInternal, parents, firstNode,
+                                                           lastNode, keys, numKeys, collisionFlags);
 }
 
-template void markHaloKeysGpu(execution::Gpu, const uint32_t*, TreeNodeIndex, const TreeNodeIndex*, TreeNodeIndex,
-                              TreeNodeIndex, const uint32_t*, size_t, uint8_t*);
-template void markHaloKeysGpu(execution::Gpu, const uint64_t*, TreeNodeIndex, const TreeNodeIndex*, TreeNodeIndex,
-                              TreeNodeIndex, const uint64_t*, size_t, uint8_t*);
+template void markHaloKeysGpu(execution::Gpu,
+                              const uint32_t*,
+                              TreeNodeIndex,
+                              const TreeNodeIndex*,
+                              const TreeNodeIndex*,
+                              TreeNodeIndex,
+                              TreeNodeIndex,
+                              const uint32_t*,
+                              size_t,
+                              uint8_t*);
+template void markHaloKeysGpu(execution::Gpu,
+                              const uint64_t*,
+                              TreeNodeIndex,
+                              const TreeNodeIndex*,
+                              const TreeNodeIndex*,
+                              TreeNodeIndex,
+                              TreeNodeIndex,
+                              const uint64_t*,
+                              size_t,
+                              uint8_t*);
 
 template<class T, class KeyType>
 __global__ void markMacsGpuKernel(const KeyType* prefixes,

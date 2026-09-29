@@ -22,6 +22,21 @@
 namespace cstone
 {
 
+/*! @brief flag octree node @p node and all its ancestors as halos
+ *
+ * Like findCollisions, which flags every node on the path to an overlapping leaf. Without the ancestor flags a tree
+ * update can merge the flagged leaf back into a parent that passes the MAC.
+ */
+HOST_DEVICE_FUN inline void markHaloAncestors(TreeNodeIndex node, const TreeNodeIndex* parents, uint8_t* flags)
+{
+    flags[node] = 1;
+    while (node > 0)
+    {
+        node        = parents[(node - 1) / 8];
+        flags[node] = 1;
+    }
+}
+
 template<class KeyType, class T>
 HOST_DEVICE_FUN void findCollisions(const KeyType* nodePrefixes,
                                     const TreeNodeIndex* childOffsets,

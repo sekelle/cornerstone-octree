@@ -559,7 +559,7 @@ public:
         reallocate(scratch, origSize, 1.0);
     }
 
-    /*! @brief flag the leaves that contain @p keys as halos, in addition to the flags set by discoverHalos
+    /*! @brief flag the leaves that contain @p keys and their ancestors as halos, in addition to discoverHalos
      *
      * @param[in] keys  SFC keys on the accelerator. Keys inside the executing rank's assignment are ignored.
      *
@@ -578,15 +578,19 @@ public:
 
         if constexpr (execution::HaveGpu<Exec>{})
         {
-            markHaloKeysGpu(exec_, rawPtr(leavesAcc_), octreeAcc_.numLeafNodes, toInternal.data(), firstNode, lastNode,
-                            keys.data(), keys.size(), rawPtr(macsAcc_));
+            markHaloKeysGpu(exec_, rawPtr(leavesAcc_), octreeAcc_.numLeafNodes, toInternal.data(),
+                            rawPtr(octreeAcc_.parents), firstNode, lastNode, keys.data(), keys.size(),
+                            rawPtr(macsAcc_));
         }
         else
         {
             for (KeyType key : keys)
             {
                 TreeNodeIndex leafIdx = findNodeBelow(leaves_.data(), nNodes(leaves_), key);
-                if (leafIdx < firstNode || leafIdx >= lastNode) { macsAcc_[toInternal[leafIdx]] = 1; }
+                if (leafIdx < firstNode || leafIdx >= lastNode)
+                {
+                    markHaloAncestors(toInternal[leafIdx], rawPtr(octreeAcc_.parents), rawPtr(macsAcc_));
+                }
             }
         }
     }
