@@ -197,7 +197,8 @@ public:
                                 invThetaEff, std::get<0>(scratch));
         }
 
-        int fail = 0, maxRep = 10;
+        // Shared element representatives can put an assignment boundary at the finest key level.
+        int fail = 0, maxRep = maxTreeLevel<KeyType>{};
         do
         {
             focusTree_.updateMinMac(global_.assignment(), invThetaEff, true);
@@ -207,13 +208,13 @@ public:
             reallocate(focusTree_.octreeViewAcc().numLeafNodes + 1, allocGrowthRate_, layout_, layoutAcc_);
             focusTree_.discoverHalos(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h),
                                      {rawPtr(layoutAcc_), layoutAcc_.size()}, haloSearchExt_, get<0>(scratch), false);
-            fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
-            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, comm_);
-
-            halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
+            fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_) != 0;
+            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
 
             if (fail && myRank_ == 0) { std::cout << "LET refine, mode=" << fail << std::endl; }
         } while (fail && maxRep--);
+        if (fail) { throw std::runtime_error("Domain halo layout did not converge within the tree depth\n"); }
+        halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
 
         updateLayout(sorter, keyView, particleKeys, std::tie(x, y, z, h), particleProperties, scratch);
         setupHalos(particleKeys, x, y, z, h, scratch);
@@ -261,7 +262,8 @@ public:
             }
         }
 
-        int fail = 0, maxRep = 10;
+        // Shared element representatives can put an assignment boundary at the finest key level.
+        int fail = 0, maxRep = maxTreeLevel<KeyType>{};
         do
         {
             focusTree_.updateMacs(global_.assignment(), centerDriftTol_ / theta_, true);
@@ -274,13 +276,13 @@ public:
             reallocate(focusTree_.octreeViewAcc().numLeafNodes + 1, allocGrowthRate_, layout_, layoutAcc_);
             focusTree_.discoverHalos(rawPtr(x), rawPtr(y), rawPtr(z), rawPtr(h),
                                      {rawPtr(layoutAcc_), layoutAcc_.size()}, haloSearchExt_, get<0>(scratch), true);
-            fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_);
-            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_SUM, comm_);
-
-            halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
+            fail = focusTree_.computeLayout({rawPtr(layoutAcc_), layoutAcc_.size()}, layout_) != 0;
+            MPI_Allreduce(MPI_IN_PLACE, &fail, 1, MPI_INT, MPI_MAX, comm_);
 
             if (fail && myRank_ == 0) { std::cout << "LET refine, mode=" << fail << std::endl; }
         } while (fail && maxRep--);
+        if (fail) { throw std::runtime_error("Domain halo layout did not converge within the tree depth\n"); }
+        halos_.exchangeRequests(focusTree_.treeLeaves(), focusTree_.assignment(), layout_);
 
         // diagnostics(keyView.size());
 
@@ -376,7 +378,7 @@ public:
         // the keys again on the finer tree.
         std::span<const KeyType> keyView{rawPtr(particleKeys) + bufDesc_.start, size_t(bufDesc_.end - bufDesc_.start)};
         auto& scratch = std::get<0>(scratchBuffers);
-        int code = 0, fail = 0, maxRep = 10;
+        int code = 0, fail = 0, maxRep = maxTreeLevel<KeyType>{};
         while (true)
         {
             focusTree_.addHaloKeys(haloKeys);

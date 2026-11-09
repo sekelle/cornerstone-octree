@@ -30,6 +30,7 @@ addCstoneMpiTest(exchange_domain.cpp exchange_domain GlobalDomainExchange 12)
 addCstoneMpiTest(focus_tree.cpp focus_tree FocusTreeIntregration 12)
 addCstoneMpiTest(domain_nranks.cpp domain_nranks GlobalDomainNRanks 12)
 addCstoneMpiTest(domain_add_halos.cpp domain_add_halos GlobalDomainAddHalos 4)
+addCstoneMpiTest(domain_halo_depth.cpp domain_halo_depth GlobalDomainHaloDepth 4)
 
 # workaround for compiling MPI with nvcc on cray systems
 if (CSTONE_WITH_CUDA AND MPI_CXX_INCLUDE_PATH STREQUAL "" AND DEFINED ENV{CRAY_MPICH2_DIR} OR DEFINED ENV{CRAY_MPICH_DIR})
